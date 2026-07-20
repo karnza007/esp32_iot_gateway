@@ -1,0 +1,25 @@
+# macOS system files
+.DS_Store
+
+# Claude Code — personal/local settings (not shared)
+.claude/settings.local.json
+
+# Gowin EDA build output (regenerated on every synthesis; large)
+fpga/impl/
+*.gprj.user
+*.fs
+*.rpt.html
+
+# Icarus Verilog simulation output
+sim_build/
+*.vvp
+*.vcd
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Measurement runs (per machine; curated results go in docs/)
+data/*.csv
+data/*.wav

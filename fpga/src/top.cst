@@ -1,0 +1,29 @@
+// ===== I2S_demo top — INMP441 -> FPGA -> UART -> ESP32 =====
+
+// 27 MHz crystal
+IO_LOC  "clk" 45;
+IO_PORT "clk" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+
+// Active-low reset — onboard button S1
+IO_LOC  "rst" 14;
+IO_PORT "rst" PULL_MODE=UP;
+
+// INMP441 SCK (bit clock) -> mic
+IO_LOC  "i2s_sck" 39;
+IO_PORT "i2s_sck" IO_TYPE=LVCMOS33 DRIVE=8;
+
+// INMP441 WS (word select) -> mic
+IO_LOC  "i2s_ws" 40;
+IO_PORT "i2s_ws" IO_TYPE=LVCMOS33 DRIVE=8;
+
+// INMP441 SD (serial data) <- mic  (INPUT)
+IO_LOC  "i2s_sd" 41;
+IO_PORT "i2s_sd" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+
+// UART TX -> ESP32 RX
+IO_LOC  "uart_tx" 42;
+IO_PORT "uart_tx" IO_TYPE=LVCMOS33 DRIVE=8;
+
+// PLL lock (debug, scope/LED)
+IO_LOC  "lock_out" 43;
+IO_PORT "lock_out" IO_TYPE=LVCMOS33 DRIVE=8;
