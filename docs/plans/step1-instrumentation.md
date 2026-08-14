@@ -1,8 +1,15 @@
 # Plan — Step 1: Instrumentation
 
-**Status:** awaiting review
+**Status:** approved and implemented — see [`../05-instrumentation.md`](../05-instrumentation.md)
+for the as-built design and simulation results. This file is kept as the record of what
+was planned and why.
 **Milestone:** M2
 **Prerequisite for:** M3 (load sweep), M4 (SPI comparison)
+
+**Decisions taken at review:** checksum kept; FIFO depth 64; ESP32 byte counting deferred.
+One change from this plan during implementation — `uart_tx`'s bit timer was widened from a
+fixed 4 bits to `$clog2(CLK_PER_BIT)`, because the positive-control test needs to set a
+deliberately slow baud rate and the old timer could not represent one.
 
 ---
 

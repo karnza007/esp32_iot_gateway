@@ -1,6 +1,6 @@
 # 03 — On-wire protocol
 
-## v1 — current, implemented and verified
+## v1 — superseded by v2 (kept for reference)
 
 ```
 ┌──────────────┬────────────────────────────────┐
@@ -18,10 +18,10 @@ frame = 1028 bytes, emitted once per 512 samples
 the viewer resynchronizes on the next sync word and shows slightly wrong audio with no
 indication that anything went missing. This is exactly what v2 fixes.
 
-## v2 — proposed, pending review
+## v2 — implemented and simulated (current)
 
-See [`plans/step1-instrumentation.md`](plans/step1-instrumentation.md) for the
-implementation plan.
+Full design write-up: [`05-instrumentation.md`](05-instrumentation.md).
+Implemented in `fpga/src/framer.v`; parsed by `host/inmp441_viewer.py`.
 
 | Offset | Size | Field | Meaning |
 |--------|------|-------|---------|

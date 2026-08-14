@@ -10,18 +10,22 @@
 - [x] Python live viewer: waveform + FFT, fixed magnitude axis
 - [x] Verified live: 30,120 B/s, sync every 1028 bytes, real audio (ambient RMS ≈ 228)
 
-## M2 — Instrumentation ⬜ next
+## M2 — Instrumentation 🟨 built and simulated; hardware run pending
 
-Plan: [`plans/step1-instrumentation.md`](plans/step1-instrumentation.md) — **awaiting review**
+Design: [`05-instrumentation.md`](05-instrumentation.md) · Plan:
+[`plans/step1-instrumentation.md`](plans/step1-instrumentation.md)
 
-- [ ] Frame v2: `seq`, `ovf`, `cfg`, payload checksum
-- [ ] FIFO depth 32 → 64, with a real overflow counter
-- [ ] `BCLK_DIV` exposed as a top-level parameter
-- [ ] Viewer parses the header, derives `fs` from `cfg`
-- [ ] Viewer reports drop rate / overflow / checksum errors / throughput, once per second
-- [ ] Stats appended to CSV in `data/` for later plotting
-- [ ] Regression check at `N = 25`: zero drops, zero overflow, zero checksum errors
-- [ ] Negative test: force a slow baud and confirm the counters actually respond
+- [x] Frame v2: `seq`, `ovf`, `cfg`, payload checksum
+- [x] FIFO depth 32 → 64, with a real overflow counter
+- [x] `BCLK_DIV` exposed as a top-level parameter
+- [x] Viewer parses the header, derives `fs` from `cfg`
+- [x] Viewer reports drop rate / overflow / checksum errors / throughput, once per second
+- [x] Stats appended to CSV in `data/` for later plotting
+- [x] Simulation: `tb_framer` (format + overflow positive control) — PASS
+- [x] Simulation: `tb_chain` (full datapath) at all six sweep points — PASS
+- [x] Host parser verified offline against a synthetic lossy stream
+- [ ] **Hardware null test at `BCLK_DIV = 25`**: zero drops, zero overflow, ~30.35 kB/s
+- [ ] **Hardware positive control**: raise `CLK_PER_BIT`, confirm `ovf` climbs, then restore
 
 ## M3 — Load sweep ⬜
 

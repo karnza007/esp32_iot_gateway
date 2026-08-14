@@ -4,9 +4,10 @@
 > it to a host PC through an ESP32-S3 gateway — first over **UART**, then over **SPI**,
 > so the two transports can be measured against each other under identical load.
 
-**Status:** **Milestone 1 — UART path working (verified end-to-end).**
-INMP441 → Tang Nano 4K → ESP32-S3 → Python live viewer. Measured 30,120 B/s on the
-wire (15 kHz × 2 bytes), sync every 1028 bytes, real audio confirmed.
+**Status:** **M1 done** — UART path verified end-to-end on hardware (30,120 B/s, real
+audio). **M2 built and simulated** — every frame now carries a sequence number, an
+overflow count and a checksum, so data loss is measured rather than guessed at; hardware
+bring-up of the new bitstream is the next step.
 
 ---
 
@@ -56,8 +57,11 @@ channel). It reads the **full 24-bit left-channel word** MSB-first, then keeps t
 16 bits and discards the 8 LSBs. The capture window starts at `CAP_START = 2`, a value
 validated by simulation against known bit patterns.
 
-**Framing.** `framer.v` prepends a 4-byte sync word every 512 samples and pushes bytes
-into a small FIFO that decouples the bursty producer from the steady UART drain.
+**Framing.** `framer.v` emits a 1036-byte frame per 512 samples: a 4-byte sync word, a
+6-byte header (`seq`, `ovf`, `cfg`), the payload, and a 2-byte checksum. Bytes go through
+a 64-byte FIFO that decouples the bursty producer from the steady UART drain — and every
+byte that FIFO has to discard is counted, so loss can never be silent. See
+[`docs/05-instrumentation.md`](docs/05-instrumentation.md).
 
 **Transport.** `uart_tx.v` sends 8N1 at 2 Mbaud. The ESP32-S3 forwards bytes verbatim —
 frames already carry their own sync, so the gateway needs no protocol awareness.
@@ -129,6 +133,21 @@ Details in [`docs/04-roadmap.md`](docs/04-roadmap.md).
 - [`docs/02-hardware.md`](docs/02-hardware.md) — boards, pinout, wiring, part limits.
 - [`docs/03-protocol.md`](docs/03-protocol.md) — on-wire frame format.
 - [`docs/04-roadmap.md`](docs/04-roadmap.md) — milestones with checkboxes.
+- [`docs/05-instrumentation.md`](docs/05-instrumentation.md) — **how loss is measured and
+  localised**: concept, block diagram, the three counters, and the simulation results.
 - [`docs/06-architecture.md`](docs/06-architecture.md) — module-by-module design.
 - [`docs/08-troubleshooting.md`](docs/08-troubleshooting.md) — problems hit and fixes.
-- [`docs/plans/`](docs/plans/) — implementation plans awaiting review.
+- [`docs/plans/`](docs/plans/) — implementation plans.
+
+## Simulation
+
+Everything is simulated before it reaches hardware:
+
+```
+./fpga/sim/run_sims.sh          # needs: brew install icarus-verilog
+```
+
+`tb_framer` checks the frame format and puts the overflow counter through a positive
+control (stall the drain, count the drops independently, demand agreement). `tb_chain`
+runs the full datapath against a behavioural INMP441 model at every sample rate in the
+planned sweep.
