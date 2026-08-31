@@ -326,3 +326,42 @@ identical, the difference between the two curves is the transport and nothing el
 stating plainly. The argument for SPI becomes headroom and scalability (more channels, 24-bit
 samples, lower CPU cost per byte) rather than a measured failure of UART at this scale. An
 honest negative result is stronger than an overstated positive one.
+
+---
+
+## 10. D1 rerun at 54 MHz — planned, not yet run
+
+At 24 MHz, link 1 was clean at every rate the clock could produce (up to 12 Mbaud) and its
+ceiling was never found. With the system clock now at 54 MHz there are six usable rates above
+6 Mbaud where there were two, so the ceiling can be **located** rather than bracketed.
+
+**Method:** unchanged from the revised D1 — `MODE_PUMP`, highest data rate (`BCLK_DIV = 18`,
+46,875 Hz, 95 kB/s), link 2 pinned at a known-good 2 Mbaud and only 48 % loaded, counting
+checksum and header errors at the host so every error is attributable to link 1.
+
+| `CLK_PER_BIT` | link 1 baud | capacity | result |
+|---|---|---|---|
+| 9 | 6,000,000 | 600,000 B/s | *(re-confirm at the new clock)* |
+| 8 | 6,750,000 | 675,000 B/s | |
+| 7 | 7,714,286 | 771,429 B/s | |
+| 6 | 9,000,000 | 900,000 B/s | |
+| 5 | 10,800,000 | 1,080,000 B/s | |
+| 4 | 13,500,000 | 1,350,000 B/s | |
+| 3 | 18,000,000 | 1,800,000 B/s | |
+
+**Estimated run time**, from per-point overhead measured during today's sweeps
+(synthesis 32 s + FPGA program 3 s + ESP32 compile/flash 25 s + settle 2 s = 62 s):
+
+| capture length | total for 7 points |
+|---|---|
+| 30 s | ~10 min 45 s |
+| **45 s** | **~12 min 30 s** |
+| 60 s | ~14 min 15 s |
+
+45 s is the length used for every D1/D2 point so far, so keeping it makes the results
+directly comparable.
+
+**Expected outcome.** At 18 Mbaud the TX pin toggles at up to 9 MHz on a jumper wire, so a
+failure somewhere in the upper half is plausible — but link 1 has not failed once yet, and
+the honest prediction is that it may again survive everything, in which case the limit is the
+wire and the drive strength rather than either chip. Either result is reportable.

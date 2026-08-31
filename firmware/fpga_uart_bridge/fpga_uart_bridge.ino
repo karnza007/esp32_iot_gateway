@@ -4,7 +4,7 @@
 //   ESP32-S3 ──link 2 (UART0 → CH9102 → USB)──▶ host
 //
 // TWO LINKS, TWO BAUD RATES, EACH SET IN TWO PLACES:
-//   link 1  FPGA -> ESP32 :  FPGA_BAUD here  ==  24 MHz / CLK_PER_BIT in top.v
+//   link 1  FPGA -> ESP32 :  FPGA_BAUD here  ==  SYS_CLK_MHZ / CLK_PER_BIT in top.v
 //   link 2  ESP32 -> host :  HOST_BAUD here  ==  --baud in inmp441_viewer.py
 // A mismatch on either link makes every byte unreadable and looks exactly like a
 // dead wire. Change both ends together, and remember editing is not uploading:
@@ -17,7 +17,7 @@
 // ---------------------------------------------------------------- configuration
 constexpr int      FPGA_RX_PIN = 18;        // ESP32-S3 GPIO <- FPGA UART TX (pin 42)
 constexpr int      FPGA_TX_PIN = 17;        // unused (no data back to the FPGA)
-constexpr uint32_t FPGA_BAUD   = 2000000;   // link 1: must match 24 MHz / CLK_PER_BIT in top.v
+constexpr uint32_t FPGA_BAUD   = 2000000;   // link 1: must match SYS_CLK_MHZ / CLK_PER_BIT in top.v
 constexpr uint32_t HOST_BAUD   = 2000000;   // link 2: must match --baud in inmp441_viewer.py
 
 // 0 = pump (normal operation), 1 = diagnostic.
