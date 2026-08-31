@@ -116,9 +116,10 @@ python host/inmp441_viewer.py          # auto-detects the wchusbserial port
 ## Roadmap
 
 - **M1 — UART path (done).** Single channel, 15 kHz, 16-bit, live viewer.
-- **M2 — Instrumentation (next).** Sequence numbers, FIFO overflow counters, payload
-  checksum, host-side drop/error statistics. See
-  [`docs/plans/step1-instrumentation.md`](docs/plans/step1-instrumentation.md).
+- **M2 — Instrumentation (built + simulated; hardware next).** Sequence numbers, FIFO
+  overflow counters, payload checksum, host-side drop/error statistics. See
+  [`docs/05-instrumentation.md`](docs/05-instrumentation.md) and
+  [`docs/07-bringup.md`](docs/07-bringup.md).
 - **M3 — Load sweep.** Add a second microphone; sweep `N` = 25 → 8 and record drop rate
   and SNR/THD at each point until the UART link saturates.
 - **M4 — SPI transport.** Replace UART with SPI (FPGA master, ESP32-S3 DMA slave) and
@@ -136,6 +137,7 @@ Details in [`docs/04-roadmap.md`](docs/04-roadmap.md).
 - [`docs/05-instrumentation.md`](docs/05-instrumentation.md) — **how loss is measured and
   localised**: concept, block diagram, the three counters, and the simulation results.
 - [`docs/06-architecture.md`](docs/06-architecture.md) — module-by-module design.
+- [`docs/07-bringup.md`](docs/07-bringup.md) — **how to program the board and run the null test**.
 - [`docs/08-troubleshooting.md`](docs/08-troubleshooting.md) — problems hit and fixes.
 - [`docs/plans/`](docs/plans/) — implementation plans.
 
