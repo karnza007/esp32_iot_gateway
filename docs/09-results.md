@@ -40,7 +40,12 @@ Wire rate for one channel: `fs / 512 × 1036` B/s.
 | `m3-A-div12.csv` | 59 | 3618 | 0 | 0.00 | 0 | 0 | 0 | 63,246 | 32 | OK |
 | `m3-A-div10.csv` | 59 | 4341 | 0 | 0.00 | 0 | 0 | 0 | 75,887 | 38 | OK |
 | `m3-A-div8.csv` | 59 | 5425 | 0 | 0.00 | 0 | 0 | 0 | 94,816 | 47 | OK |
-| `m3-B-div8.csv` | 59 | 3772 | 319 | 5.88 | 1335 | **0** | 1016 | 66,082 | 72 | **GATEWAY LOSS (ESP32/USB)** |
+| `m3-B-div25.csv` | 44 | 1294 | 0 | 0.00 | 0 | 0 | 0 | 30,385 | 33 | OK |
+| `m3-B-div20.csv` | 44 | 1618 | 0 | 0.00 | 0 | 0 | 0 | 38,001 | 41 | OK |
+| `m3-B-div16.csv` | 44 | 2025 | 0 | 0.00 | 0 | 0 | 0 | 47,556 | 52 | OK |
+| `m3-B-div12.csv` | 44 | 2695 | 0 | 0.00 | 0 | 0 | 0 | 63,334 | 69 | OK |
+| `m3-B-div10.csv` | 44 | 3236 | 0 | 0.00 | 0 | 0 | 0 | 76,032 | 82 | OK |
+| `m3-B-div8.csv` | 59 | 3772 | 319 | 5.88 | 1335 | **0** | 1016 | 66,082 | 103 | **GATEWAY LOSS (ESP32/USB)** |
 
 ---
 
@@ -396,3 +401,69 @@ An earlier run of this same point (`m3-B-div8.v2-INVALID.csv.bak`) reported
 faults, now fixed (frame v3 + corrected verdict logic). The v3 run reports **0 header
 errors**, so no header corruption went undetected this time — the numbers above can be
 trusted in a way the earlier ones could not.
+
+---
+
+## M3-B — the controlled comparison
+
+**2026-08-31** · `BCLK_DIV` 25 → 8 at **link 2 = 921,600 baud**, frame v3
+· raw: `data/m3-B-div*.csv` · automated with `tools/sweep.sh`
+
+**Hypothesis H2.** The identical FPGA sweep, with only link 2's baud rate changed, will lose
+data at `BCLK_DIV = 8` and nowhere else. Since nothing else differs, the loss is caused by
+link 2.
+
+**Result — H2 HELD.** The same six FPGA configurations, run twice:
+
+| `BCLK_DIV` | offered B/s | A: link 2 = 2 Mbaud | | B: link 2 = 921,600 | |
+|---|---|---|---|---|---|
+| | | **% of link 2** | **drop** | **% of link 2** | **drop** |
+| 25 | 30,410 | 15 % | 0.00 % | 33 % | 0.00 % |
+| 20 | 38,013 | 19 % | 0.00 % | 41 % | 0.00 % |
+| 16 | 47,516 | 24 % | 0.00 % | 52 % | 0.00 % |
+| 12 | 63,354 | 32 % | 0.00 % | 69 % | 0.00 % |
+| 10 | 76,025 | 38 % | 0.00 % | **82 %** | 0.00 % |
+| **8** | **95,032** | **48 %** | **0.00 %** | **103 %** | **5.88 %** |
+
+**Twelve runs. One point loses data. It is the only point where demand exceeds capacity.**
+
+### Why this is a controlled experiment rather than an observation
+
+The FPGA bitstream at `BCLK_DIV = 8` is byte-identical in both columns. The microphone, the
+wiring, the frame format, the host analysis and the ESP32 firmware are all unchanged. **A
+single number differs: link 2's baud rate.** Change it back and the loss disappears; change
+it again and the loss returns.
+
+That is what licenses the causal claim. Without column A, "the link lost data at 46.875 kHz"
+would be an observation with several possible explanations — the FPGA struggling at a 3 MHz
+bit clock, the microphone misbehaving near its 3.2 MHz limit, the frame format failing at
+speed. Column A rules all of those out: **the same FPGA configuration, at the same sample
+rate, is perfectly clean when the gateway link is fast enough.**
+
+### The knee is bracketed
+
+| | offered | % of link 2 | result |
+|---|---|---|---|
+| `BCLK_DIV = 10` | 76,025 B/s | 82 % | clean |
+| `BCLK_DIV = 8` | 95,032 B/s | 103 % | 5.88 % loss |
+
+The transition lies between **82 % and 103 %** of nominal capacity — consistent with the
+94.5 % ceiling measured directly at div8, where 87,103 B/s arrived against a nominal 92,160.
+Phase C locates it precisely by lowering capacity against fixed demand, approaching the same
+knee from the opposite direction.
+
+### Automation
+
+All of phase B after the first point was run by `tools/sweep.sh`: it edits `top.v`,
+synthesises and places & routes through Gowin's `gw_sh`, programs the bitstream to SRAM via
+`programmer_cli`, captures a run, and then **verifies that the `bclk_div` the FPGA reports in
+the frame header matches what was asked for.**
+
+That last check is not ceremony. This project has already lost a session to a stale bitstream
+and mislabelled a data point by running a sweep point twice into one file. Both faults are
+now structurally impossible: the data states its own configuration, and the script refuses a
+run whose configuration disagrees with its filename.
+
+(`gw_sh` needs Tcl 8.6 at `/Library/Frameworks`, which macOS 26 no longer ships. The Gowin
+bundle carries its own copy, so `DYLD_FRAMEWORK_PATH` pointed at
+`GowinIDE.app/.../IDE/lib` is enough — no system modification.)
