@@ -174,21 +174,42 @@ at the host**. Every error is then attributable to link 1.
 | 2,000,000 | 4044 | 0 | 0 | **0.000 %** | CLEAN |
 | 4,000,000 | 4045 | 0 | 0 | **0.000 %** | CLEAN |
 | 6,000,000 | 4048 | 0 | 0 | **0.000 %** | CLEAN |
-| 8,000,000 | 1010 (11 s) | 0 | 0 | 0.000 % | *interrupted — inconclusive* |
+| **8,000,000** | **8184 + 8184** | **0** | **0** | **0.000 %** | **CLEAN (two 90 s runs)** |
 
-**Highest rate proven clean so far: 6,000,000 baud** — 600,000 B/s, three times the 2 Mbaud
-used for all of M3, with zero errors in 4048 frames.
+**Link 1 is clean at every rate tested, up to 8,000,000 baud** — 800,000 B/s, four times the
+rate used throughout M3, with **zero errors in 16,368 frames** across two independent 90-second
+runs.
 
-8 Mbaud remains open: clean for 11 s, but it failed once under the coarser test, so it needs
-a full-length run before it can be claimed. The run was stopped part-way to unplug the boards.
+**H6 is falsified.** It predicted link 1 would fail below 8 Mbaud, on the basis that the
+ESP32-S3's UART is specified to about 5 Mbaud. It does not fail. The datasheet figure is
+conservative, or applies to conditions this test does not reproduce.
 
-### D2 — link 2 ceiling
+**The earlier 8 Mbaud "failure" was a transient**, not a limit. It occurred on the first
+attempt immediately after flashing, and never recurred in three subsequent runs totalling
+over three minutes. Most likely the ESP32 had not settled when the capture began; the
+two-second pause after flashing was evidently not always enough. Worth noting as a
+methodological hazard: **a single failing run immediately after a reflash should be repeated
+before it is believed.**
 
-| `HOST_BAUD` | byte rate | sync words | drop % | verdict |
-|---|---|---|---|---|
-| | | | | |
+### D2 — link 2 ceiling — **no ceiling found**
 
-**Highest reliable link 2 rate: ______**
+Method revised to match D1: an error rate at full data rate, not sync counting. Link 1 pinned
+at 6,000,000 baud (proven clean) and only 16 % loaded, so every error is attributable to
+link 2.
+
+| `HOST_BAUD` | capacity B/s | load | frames | bad payload | bad header | corrupt | verdict |
+|---|---|---|---|---|---|---|---|
+| 2,000,000 | 200,000 | 48 % | 4060 | 0 | 0 | **0.000 %** | CLEAN |
+| 3,000,000 | 300,000 | 32 % | 4060 | 0 | 0 | **0.000 %** | CLEAN |
+| 4,000,000 | 400,000 | 24 % | 4061 | 0 | 0 | **0.000 %** | CLEAN |
+| **6,000,000** | **600,000** | **16 %** | **4061** | **0** | **0** | **0.000 %** | **CLEAN** |
+
+**H7 held, and by a wide margin.** Link 2 was assumed for the whole of M3 to be limited to
+921,600 baud — a value inherited from M1 and never measured. It runs cleanly at **6,000,000
+baud, 6.5 times faster**, delivering 600,000 B/s with zero errors.
+
+**Highest rate tested: 6,000,000 baud. No failure was observed, so this is a lower bound on
+link 2's capability, not its ceiling.**
 
 ### D3 — two channels
 
@@ -200,10 +221,37 @@ a full-length run before it can be claimed. The run was stopped part-way to unpl
 
 | | prediction | outcome |
 |---|---|---|
-| H5 | link 1 works at 4 Mbaud | ☐ held ☐ falsified |
-| H6 | link 1 fails below 8 Mbaud | ☐ held ☐ falsified, ceiling ______ |
-| H7 | link 2 exceeds 2 Mbaud | ☐ held ☐ falsified, ceiling ______ |
-| H8 | 2 mics cannot saturate the improved chain | ☐ held ☐ falsified |
+| H5 | link 1 works at 4 Mbaud | ☑ **HELD** — 0.000 % corrupt over 4045 frames |
+| H6 | link 1 fails below 8 Mbaud | ☒ **FALSIFIED** — clean at 8 Mbaud, 16,368 frames, no ceiling found |
+| H7 | link 2 exceeds 2 Mbaud | ☑ **HELD** — clean at 6 Mbaud, 6.5× the assumed limit |
+| H8 | 2 mics cannot saturate the improved chain | **very likely** — two mics are 24–32 % of the measured links |
+
+### What D1 and D2 together mean
+
+| | assumed for all of M3 | measured in M3-D | factor |
+|---|---|---|---|
+| link 1 | 2,000,000 baud | **≥ 8,000,000** | **4×** |
+| link 2 | 921,600 baud | **≥ 6,000,000** | **6.5×** |
+
+Every M3 result was taken on a chain running at roughly a quarter to a sixth of what the
+hardware will actually do. The knee measured in M3-C is real and correctly located — but it
+is the knee of a link that was **needlessly slow**, not of UART as a technology.
+
+**This makes H8 near-certain and it changes the project's conclusion.** Two INMP441s produce
+190,063 B/s:
+
+| against | load |
+|---|---|
+| link 1 at 8 Mbaud (800,000 B/s) | **23.8 %** |
+| link 2 at 6 Mbaud (600,000 B/s) | **31.7 %** |
+
+Saturating link 2 would need **6.4 channels** of 16-bit audio at 46,875 Hz — about **seven
+INMP441s**. This project has two.
+
+**Therefore: with this hardware, UART cannot be shown to fail.** The report must say so. The
+case for SPI has to rest on headroom, scalability and cost-per-byte rather than on a measured
+UART failure at audio rates — unless a synthetic load generator is added to push past what
+microphones can produce.
 
 ## 8. Second-channel implementation (D3)
 

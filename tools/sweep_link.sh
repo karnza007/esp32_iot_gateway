@@ -83,13 +83,44 @@ print(f"  {ok} intact, {cks} bad payload, {hdr} bad header, {lost} lost"
 PYE
     done
 elif [ "$PHASE" = "D2" ]; then
-    printf "%-12s %s\n" "HOST_BAUD" "result"
+    # Link 2's speed limit, measured the same way D1 ended up being measured: as an
+    # error rate at full data rate, not a yes/no from sync counting.
+    #
+    # Link 1 is pinned at 6 Mbaud -- proven clean over 4048 frames -- and carries
+    # only 95 kB/s of 600 kB/s (16 %), so it cannot be the source of any error.
+    # Every checksum or header error is therefore attributable to link 2.
+    set_mode 0
+    set_cpb 4; set_baud1 6000000            # link 1 held at its proven-clean rate
+    sed -i '' -E "s|^( *parameter integer BCLK_DIV *= *)[0-9]+,|\18,|" fpga/src/top.v
+    SECS=${SECS:-45}
+    build_fpga || { echo "FPGA BUILD/PROGRAM FAILED"; exit 1; }
+    echo "link 1 pinned at 6,000,000 baud (proven clean); BCLK_DIV=8 -> 95 kB/s offered"
+    echo
     for B2 in "$@"; do
+        CSV="data/m3d-D2-baud${B2}.csv"
+        echo "--- link 2 = ${B2} baud (capacity $(( B2 / 10 )) B/s), ${SECS}s ---"
         set_baud2 "$B2"
-        flash_esp || { printf "%-12s ESP32 FLASH FAILED\n" "$B2"; continue; }
+        flash_esp || { echo "  ESP32 FLASH FAILED"; continue; }
         sleep 2
-        printf "%-12s " "$B2"
-        "$PY" tools/read_diag.py --baud "$B2" --seconds 8 --expect-sync "$EXPECT_SYNC"
+        rm -f "$CSV"
+        "$PY" host/inmp441_viewer.py --no-plot --seconds "$SECS" --baud "$B2" \
+              --csv "$CSV" >/tmp/run.log 2>&1
+        if [ ! -s "$CSV" ]; then
+            echo "  NO FRAMES AT ALL -> link 2 unusable at ${B2} baud"; continue
+        fi
+        "$PY" - "$CSV" "$B2" <<'PYE'
+import csv, sys
+rows = list(csv.DictReader(open(sys.argv[1])))[1:]
+cap = int(sys.argv[2]) / 10
+S = lambda k: sum(int(r[k]) for r in rows)
+ok, cks, hdr, lost = S("frames_ok"), S("checksum_errors"), S("header_errors"), S("frames_lost")
+seen = ok + cks; bad = cks + hdr
+rate = 100 * bad / seen if seen else 100.0
+load = 100 * 95032 / cap
+mark = "CLEAN" if bad == 0 and lost == 0 else ("MARGINAL" if rate < 1 else "FAILING")
+print(f"  {ok} intact, {cks} bad payload, {hdr} bad header, {lost} lost"
+      f"  ({load:.0f}% loaded)  ->  {rate:.3f}% corrupt   {mark}")
+PYE
     done
 else
     echo "usage: $0 D1 <clk_per_bit>... | D2 <host_baud>..."; exit 2
