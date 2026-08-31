@@ -49,6 +49,8 @@ TRAILER_BYTES = 2              # checksum
 FRAME_BYTES = HEADER_BYTES + PAYLOAD_BYTES + TRAILER_BYTES   # 1036
 BODY_BYTES = FRAME_BYTES - len(SYNC)                         # read after sync
 
+LINK1_BPS = 200_000            # FPGA -> ESP32 @ 2 Mbaud
+LINK2_BPS = 92_160             # ESP32 -> host  @ 921600 — the chain's real ceiling
 FPGA_CLK_HZ = 24_000_000
 BCLK_PER_FRAME = 64
 FFT_YMAX_DEFAULT = 5000        # fixed magnitude axis; no auto-scaling
@@ -89,6 +91,20 @@ def sample_rate_from_cfg(cfg: int) -> float:
 
 def channels_from_cfg(cfg: int) -> int:
     return (cfg >> 8) & 0x3
+
+
+def plausible_cfg(cfg: int) -> bool:
+    """Does this cfg word look like one our FPGA could have sent?
+
+    Used to accept a header from a frame whose PAYLOAD failed its checksum. Under
+    heavy saturation no frame arrives intact, so insisting on a perfect frame
+    before starting would make the program refuse to run in exactly the condition
+    it exists to measure.
+    """
+    bclk_div = cfg & 0xFF
+    nch = (cfg >> 8) & 0x3
+    reserved = cfg >> 10
+    return 8 <= bclk_div <= 64 and 1 <= nch <= 2 and reserved == 0
 
 
 # ---------------------------------------------------------------- statistics
@@ -155,7 +171,16 @@ class FrameReader:
     """Background thread: resynchronise, validate, publish the latest frame."""
 
     def __init__(self, port: str, baud: int = BAUD) -> None:
-        self.ser = serial.Serial(port, baud, timeout=1)
+        self._init_state(serial.Serial(port, baud, timeout=1))
+
+    def _init_state(self, ser) -> None:
+        """All mutable state, in one place.
+
+        Kept separate from __init__ so tests can attach a fake serial object
+        without opening a real port, and cannot drift out of sync with the
+        constructor when a field is added.
+        """
+        self.ser = ser
         self._latest: np.ndarray | None = None
         self._cfg: int | None = None
         self._lock = threading.Lock()
@@ -168,6 +193,7 @@ class FrameReader:
         self._last_seq: int | None = None
         self._last_ovf: int | None = None
         self._ovf_accum: int = 0        # our own total; the wire field wraps at 65536
+        self.frames_seen_any = 0        # sync matched + full body read, intact or not
 
     # -- lifecycle ---------------------------------------------------------
     def start(self) -> None:
@@ -294,6 +320,7 @@ class FrameReader:
 
                 good = (sum(payload) & 0xFFFF) == want
                 self._account(seq, ovf, good)
+                self.frames_seen_any += 1
 
                 if good:
                     samples = np.frombuffer(payload, dtype="<i2")
@@ -301,9 +328,18 @@ class FrameReader:
                         self._latest = samples
                         self._cfg = cfg
                     self._first.set()
+                elif self._cfg is None and plausible_cfg(cfg):
+                    # Saturated link: the payload is shredded but the header is
+                    # readable. Start anyway — reporting the loss IS the result.
+                    with self._lock:
+                        self._cfg = cfg
+                    self._first.set()
 
-            except serial.SerialException as e:
-                print(f"[reader] serial error: {e}", file=sys.stderr)
+            except (serial.SerialException, OSError) as e:
+                # A shutdown closes the port under this thread's feet, which surfaces
+                # as "Bad file descriptor". That is expected during exit, not a fault.
+                if not self._stop.is_set():
+                    print(f"[reader] serial error: {e}", file=sys.stderr)
                 return
 
 
@@ -367,12 +403,21 @@ def main() -> int:
     print(f"Reading {port} — waiting for the first valid frame…")
     reader.start()
     if not reader.wait_first(10.0):
-        print(f"No valid frame in 10 s on {port}.\n"
-              f"  - is this the ESP32 port? others seen: {', '.join(list_ports())}\n"
-              "  - ESP32 sketch uploaded, USB CDC On Boot = Disabled?\n"
-              "  - common ground between the two boards?\n"
-              "  - was the FPGA re-synthesised AND re-programmed after the last edit?",
-              file=sys.stderr)
+        if reader.frames_seen_any:
+            print(f"Found {reader.frames_seen_any} frames on {port}, but none had a "
+                  "readable header.\n"
+                  "  Bytes are arriving, so the wiring is fine — they are being mangled.\n"
+                  "  Most likely the FPGA's CLK_PER_BIT and the sketch's FPGA_BAUD "
+                  "disagree.", file=sys.stderr)
+        else:
+            print(f"No frames at all in 10 s on {port}.\n"
+                  f"  - is this the ESP32 port? others seen: {', '.join(list_ports())}\n"
+                  "  - ESP32 sketch UPLOADED (not just edited), USB CDC On Boot = Disabled?\n"
+                  "  - do fpga/src/top.v CLK_PER_BIT and the sketch's FPGA_BAUD match?\n"
+                  "    (24 MHz / CLK_PER_BIT must equal FPGA_BAUD)\n"
+                  "  - common ground between the two boards?\n"
+                  "  - was the FPGA re-synthesised AND re-programmed after the last edit?",
+                  file=sys.stderr)
         reader.stop()
         return 1
 
@@ -460,21 +505,8 @@ def main() -> int:
     status_text = [""]
 
     def update(_i: int):
-        samples = reader.latest()
-        if samples is None or samples.size != FRAME_SAMPLES:
-            return wave_line, fft_line, peak_marker, status
-
-        wave_line.set_ydata(samples)
-
-        windowed = samples.astype(np.float32) * window
-        magnitude = np.abs(np.fft.rfft(windowed)) / window_gain
-        fft_line.set_ydata(magnitude)
-
-        if magnitude.size > 1:
-            k = int(np.argmax(magnitude[1:]) + 1)
-            peak_marker.set_data([float(freqs[k])], [float(magnitude[k])])
-            ax_fft.set_title(f"FFT — peak {freqs[k]:.1f} Hz")
-
+        # Statistics first, and unconditionally: under saturation there may be no
+        # intact audio to plot, and that is precisely when the numbers matter most.
         now = time.monotonic()
         if now - last_report[0] >= 1.0:
             last_report[0] = now
@@ -488,10 +520,24 @@ def main() -> int:
                 f"drop {100*iv.drop_rate:5.2f}%   ovf {iv.ovf_delta:d} "
                 f"(tot {iv.ovf_total:d})\n"
                 f"cksum err {iv.checksum_errors:d}   resync {iv.resync_events:d}\n"
-                f"wire {iv.wire_throughput/1000:.1f} kB/s of 200.0 "
-                f"({100*iv.wire_throughput/200000:.0f}% of UART)"
+                f"wire {iv.wire_throughput/1000:.1f} kB/s "
+                f"({100*iv.wire_throughput/LINK2_BPS:.0f}% of the 92.2 kB/s ceiling)"
             )
         status.set_text(status_text[0])
+
+        samples = reader.latest()
+        if samples is None or samples.size != FRAME_SAMPLES:
+            ax_fft.set_title("FFT — no intact frame (link saturated?)")
+            return wave_line, fft_line, peak_marker, status
+
+        wave_line.set_ydata(samples)
+        windowed = samples.astype(np.float32) * window
+        magnitude = np.abs(np.fft.rfft(windowed)) / window_gain
+        fft_line.set_ydata(magnitude)
+        if magnitude.size > 1:
+            k = int(np.argmax(magnitude[1:]) + 1)
+            peak_marker.set_data([float(freqs[k])], [float(magnitude[k])])
+            ax_fft.set_title(f"FFT — peak {freqs[k]:.1f} Hz")
         return wave_line, fft_line, peak_marker, status
 
     anim = animation.FuncAnimation(fig, update, interval=33, blit=False,

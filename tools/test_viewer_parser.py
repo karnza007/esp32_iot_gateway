@@ -43,17 +43,7 @@ class FakeSerial:
 
 def build_reader(stream):
     r = V.FrameReader.__new__(V.FrameReader)
-    r.ser = FakeSerial(stream)
-    r._latest = None
-    r._cfg = None
-    r._lock = threading.Lock()
-    r._stop = threading.Event()
-    r._first = threading.Event()
-    r.stats = V.LinkStats()
-    r.total = V.LinkStats()
-    r._last_seq = None
-    r._last_ovf = None
-    r._thread = threading.Thread(target=r._run, daemon=True)
+    r._init_state(FakeSerial(stream))     # same state the real constructor sets up
     return r
 
 
@@ -101,6 +91,35 @@ def main() -> int:
 
     lat = r.latest()
     print(f"  info latest frame     {lat.shape}, peak {int(np.abs(lat).max())}")
+
+    # ---- test 2: fully saturated link, NOT ONE intact frame -------------------
+    # This is the positive-control condition. The program must still start and
+    # report, because "no intact frames" is the measurement, not a failure to
+    # measure. An earlier version gated startup on a checksum-valid frame and so
+    # refused to run in exactly the case it was built for.
+    print("\n  --- saturated link: every frame corrupt ---")
+    sat = b"".join(frame(i, 100 * i, CFG, sig, corrupt=True) for i in range(6))
+    r2 = build_reader(sat)
+    r2.start()
+    started = r2.wait_first(2.0)
+    time.sleep(0.8)
+    r2.stop()
+    _, tot2 = r2.snapshot()
+
+    checks2 = [
+        ("started",         started,                     True),
+        ("cfg recovered",   r2.cfg,                      CFG),
+        ("frames_ok",       tot2.frames_ok,              0),
+        ("checksum_errors", tot2.checksum_errors,        6),
+        ("no audio",        r2.latest(),                 None),
+        ("ovf_total",       tot2.ovf_total,              500),
+        ("verdict",         tot2.verdict(),              "LINK SATURATED (FPGA FIFO)"),
+    ]
+    for name, got, want in checks2:
+        ok = got == want
+        bad += not ok
+        print(f"  {'ok  ' if ok else 'FAIL'} {name:<16} got {got!r:<28} want {want!r}")
+
     print("\nPASS" if bad == 0 else f"\nFAIL ({bad})")
     return 0 if bad == 0 else 1
 

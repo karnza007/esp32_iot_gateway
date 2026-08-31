@@ -141,4 +141,30 @@ python tools/summarize_run.py data/run-n25-null-after.csv
 
 ## 8. Notes / deviations
 
-*(record anything that differed from plan)*
+**Two host-side bugs found while attempting the first run (2026-08-31).** Both were in the
+viewer, not the hardware, and both were caused by the same wrong assumption: that a
+measurement run always contains at least one intact frame.
+
+1. **Baud mismatch.** The FPGA was reprogrammed to 250,000 baud but the ESP32 sketch had
+   only been *edited*, not *uploaded*, so it was still listening at 2,000,000. Every byte
+   was misread and no sync word was ever found. `CLK_PER_BIT` and `FPGA_BAUD` describe the
+   same wire and must always be flashed together — the same physical parameter configured
+   in two places is a design weakness of the UART transport, and one that SPI partly avoids
+   because the FPGA drives the clock and the receiver is not told the rate in advance.
+
+2. **The viewer refused to start under saturation — the exact condition it was built to
+   measure.** Startup waited for one checksum-valid frame before proceeding. At an 18 %
+   byte-loss rate no frame is ever intact, so the program timed out and exited having
+   reported nothing. The prediction table in §4 said `frames_ok ≈ 0` and the startup path
+   contradicted it; the plan was right and the code was wrong.
+
+   Fixed: a frame whose payload fails its checksum can still start the run if its **header**
+   is plausible (`plausible_cfg()` sanity-checks `BCLK_DIV`, channel count and the reserved
+   bits). Statistics are now reported before, and independently of, the audio plot, so the
+   numbers appear even when there is no intact audio to draw. The failure message also
+   distinguishes "no bytes at all" from "bytes arriving but mangled", which points straight
+   at a baud mismatch.
+
+   Regression test added: `tools/test_viewer_parser.py` now includes a fully-saturated
+   stream in which **no** frame is intact, and asserts the reader still starts, still
+   recovers `cfg`, and still returns the correct verdict.
