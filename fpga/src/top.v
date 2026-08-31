@@ -19,7 +19,7 @@
 
 module top_module #(
     parameter integer BCLK_DIV    = 25,   // 25 -> 960 kHz BCLK -> fs = 15.000 kHz
-    parameter integer CLK_PER_BIT = 96,   // TEMP positive control: 250,000 baud (normally 12 = 2 Mbaud)
+    parameter integer CLK_PER_BIT = 12,   // 12 -> 2,000,000 baud
     parameter integer NUM_CH      = 1     // channels captured per frame
 )(
     input  wire clk,         // 27 MHz crystal (pin 45)
