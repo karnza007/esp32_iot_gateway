@@ -91,12 +91,24 @@ def autodetect_port() -> str | None:
     return cands[0]
 
 
+def clock_from_cfg(cfg: int) -> int:
+    """System clock in Hz, from cfg[15:10] = MHz/6.
+
+    A bitstream built before this field existed sends 0, which means 24 MHz -- so
+    an old FPGA still reads correctly on a new host. The clock is carried in the
+    frame rather than assumed here because three separate bugs in this project came
+    from a value written in one place and assumed in another.
+    """
+    code = (cfg >> 10) & 0x3F
+    return FPGA_CLK_HZ if code == 0 else code * 6_000_000
+
+
 def sample_rate_from_cfg(cfg: int) -> float:
-    """fs = 24 MHz / (64 * BCLK_DIV). BCLK_DIV lives in cfg[7:0]."""
+    """fs = SYS_CLK / (64 * BCLK_DIV), both taken from the frame itself."""
     bclk_div = cfg & 0xFF
     if bclk_div == 0:
         return float("nan")
-    return FPGA_CLK_HZ / (BCLK_PER_FRAME * bclk_div)
+    return clock_from_cfg(cfg) / (BCLK_PER_FRAME * bclk_div)
 
 
 def channels_from_cfg(cfg: int) -> int:
@@ -134,7 +146,8 @@ def plausible_cfg(cfg: int) -> bool:
     bclk_div = cfg & 0xFF
     nch = (cfg >> 8) & 0x3
     reserved = cfg >> 10
-    return 8 <= bclk_div <= 64 and 1 <= nch <= 2 and reserved == 0
+    # reserved is now the clock code: 0 (legacy 24 MHz) or 12 MHz units up to 252
+    return 8 <= bclk_div <= 255 and 1 <= nch <= 2 and reserved in (0, 4, 8, 9, 16, 20)
 
 
 # ---------------------------------------------------------------- statistics
@@ -536,7 +549,8 @@ def main() -> int:
     nch = channels_from_cfg(cfg)
     offered = fs * 2 * max(nch, 1)
     frame_rate = fs / FRAME_SAMPLES
-    print(f"cfg=0x{cfg:04X}  BCLK_DIV={cfg & 0xFF}  channels={nch}  fs={fs:.4f} Hz")
+    print(f"cfg=0x{cfg:04X}  sys_clk={clock_from_cfg(cfg)/1e6:.0f} MHz  "
+          f"BCLK_DIV={cfg & 0xFF}  channels={nch}  fs={fs:.4f} Hz")
     print(f"FFT: {FRAME_SAMPLES}-point, bin spacing {fs/FRAME_SAMPLES:.2f} Hz "
           f"(a peak is interpolated between bins)")
     print(f"expect {frame_rate:.2f} frames/s  "

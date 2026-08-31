@@ -18,15 +18,17 @@
 module tb_chain #(
     // overridable so the whole sweep can be simulated:
     //   iverilog -Ptb_chain.BCLK_DIV=8 ...
-    parameter integer BCLK_DIV = 25            // -> 960 kHz BCLK, 15 kHz fs
+    parameter integer BCLK_DIV    = 25,        // -> 960 kHz BCLK, 15 kHz fs
+    parameter integer SYS_CLK_MHZ = 24
 );
 
     localparam integer CLK_PER_BIT  = 12;      // -> 2 Mbaud
     localparam integer FRAME_SAMPLES = 8;      // 8 not 512, purely for run time
     localparam integer FRAME_BYTES  = 12 + 2*FRAME_SAMPLES + 2;
-    localparam [15:0]  CFG          = {6'd0, 2'd1, BCLK_DIV[7:0]};
+    localparam [5:0]   CLK_CODE     = SYS_CLK_MHZ / 6;
+    localparam [15:0]  CFG          = {CLK_CODE, 2'd1, BCLK_DIV[7:0]};
 
-    localparam real    CLK_HALF  = 20.8333;                    // 24 MHz
+    localparam real    CLK_HALF  = 500.0 / SYS_CLK_MHZ;        // half period, ns
     localparam real    BIT_TIME  = 2.0*CLK_HALF*CLK_PER_BIT;   // 500 ns @ 2 Mbaud
 
     reg clk = 0, rst_n = 0;

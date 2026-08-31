@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "host"))
 import numpy as np
 import inmp441_viewer as V
 
-CFG = (1 << 8) | 25                      # 1 channel, BCLK_DIV = 25
+CFG = (4 << 10) | (1 << 8) | 25          # 24 MHz (code 4), 1 channel, BCLK_DIV = 25
 SIG = (np.sin(2 * np.pi * np.arange(512) * 1000 / 15000) * 10000).astype("<i2")
 
 
@@ -95,6 +95,7 @@ def main() -> int:
     c.eq("bytes_skipped", t.bytes_skipped, 3)
     c.eq("wire_bytes", t.wire_bytes, 5 * V.FRAME_BYTES)
     c.eq("sample_rate", V.sample_rate_from_cfg(r.cfg), 15000.0)
+    c.eq("sys_clock", V.clock_from_cfg(r.cfg), 24_000_000)
     c.eq("verdict", t.verdict(), "LINK SATURATED (FPGA FIFO)")
 
     # ---- 2: fully saturated link, not one intact frame ------------------------
@@ -129,6 +130,16 @@ def main() -> int:
     c.eq("ovf_total", t.ovf_total, 0)         # the phantom 40000 must NOT be believed
     c.eq("frames_lost", t.frames_lost, 0)     # it arrived; it is not "lost"
     c.eq("verdict", t.verdict(), "OK")
+
+    # ---- 5: the clock code, including backward compatibility ------------------
+    c.section("clock code in cfg")
+    for name, cfgv, want_clk, want_fs in [
+            ("legacy (code 0)", (0 << 10) | (1 << 8) | 25, 24_000_000, 15000.0),
+            ("24 MHz (code 4)", (4 << 10) | (1 << 8) | 25, 24_000_000, 15000.0),
+            ("54 MHz (code 9)", (9 << 10) | (1 << 8) | 18, 54_000_000, 46875.0),
+            ("54 MHz @ div56", (9 << 10) | (1 << 8) | 56, 54_000_000, 54e6/(64*56))]:
+        c.eq(name, (V.clock_from_cfg(cfgv), V.sample_rate_from_cfg(cfgv)),
+             (want_clk, want_fs))
 
     print("\nPASS" if c.failures == 0 else f"\nFAIL ({c.failures})")
     return 0 if c.failures == 0 else 1

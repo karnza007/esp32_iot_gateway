@@ -1,6 +1,6 @@
 # M3-E — Raising the FPGA system clock: purpose
 
-**Status:** proposal, awaiting confirmation. Nothing changed yet.
+**Status:** DONE — running at 54 MHz, verified on hardware 2026-08-31.
 
 ---
 
@@ -65,7 +65,7 @@ VCO 768 MHz.
 | 120 MHz | ×40 / ÷9 | 40 | 2, 4, 5, 6, 7.5, 8.6, 10, **12, 13.3, 15, 17** |
 | 189 MHz | ×7 / ÷1 | 63 | very fine, but a large jump in timing risk |
 
-**Recommendation: 96 MHz.**
+**Originally recommended 96 MHz. It does not meet timing — see §8.**
 
 - Exactly 4× the present clock, so every existing divider simply scales by 4 and every sample
   rate used so far stays exactly reachable (`BCLK_DIV` 25 → 100 for 15 kHz, 8 → 32 for
@@ -128,3 +128,90 @@ retrospectively alter anything measured.
 Steps 2 and 5 are the ones that protect the existing results. Step 3's timing report is the
 gate — if the design does not close at 96 MHz, the answer is a lower clock, not a rebuild of
 the datapath.
+
+
+---
+
+## 8. What actually happened
+
+### 96 MHz was rejected by the timing gate
+
+The design was built at 96 MHz and the place & route report read:
+
+```
+Constraint:   96.000 MHz
+Actual Fmax:  73.894 MHz      (7 logic levels)
+```
+
+**The board was never programmed.** §3's gate — "build first, read the report, and only
+program if Fmax exceeds the target" — did exactly its job.
+
+The critical path was inside the FIFO:
+
+```
+wptr -> count[0..4] (subtract chain) -> compare -> memory write enable
+```
+
+Occupancy was computed combinationally as `wptr - rptr` and the two "full" comparisons sat
+directly in front of the memory write. That is seven levels of logic in one clock.
+
+### An attempted fix, abandoned
+
+Tracking occupancy incrementally and registering the full flags should shorten that path. It
+was implemented and it broke the simulations. **The cause was not established**, so it was
+reverted rather than shipped — an unverified optimisation in the buffer that decides which
+bytes get dropped is exactly the wrong thing to trust. It remains available as future work
+if a clock above ~74 MHz is ever wanted.
+
+### 54 MHz, chosen instead
+
+| clock | margin vs the 73.9 MHz capability | exact 15 kHz | exact 46.875 kHz |
+|---|---|---|---|
+| 48 MHz | 54 % | yes | yes |
+| **54 MHz** | **37 %** | no — 15,067 Hz | **yes** (`BCLK_DIV = 18`) |
+| 72 MHz | 3 % | yes | yes |
+| 96 MHz | **−23 %** | — | — |
+
+54 MHz needs **no logic changes at all**, and 72 MHz was ruled out because 3 % is not margin.
+
+Built at 54 MHz:
+
+```
+Constraint 54.0 MHz   achieved 59.8 MHz   ->  PASS
+```
+
+(The achieved figure differs between builds because place & route stops optimising once the
+constraint is met — it reached 73.9 MHz when asked for 96, and 59.8 when asked for 54. The
+design's real capability is the higher number; the margin at 54 MHz is roughly 37 %.)
+
+### Hardware verification — PASS
+
+```
+cfg=0x2538  sys_clk=54 MHz  BCLK_DIV=56  channels=1  fs=15066.9643 Hz
+
+  duration           44 s
+  frames received    1303  (of 1303 expected)
+  frames intact      1303
+  frames lost 0   checksum errors 0   header errors 0   overflow 0
+  delivered wire     30,557 B/s   (predicted 30,546)
+  verdict            OK   in all 44 intervals
+```
+
+**Predicted 30,546 B/s, measured 30,557 — 0.04 % error**, on the first run at a clock the
+design had never been built for.
+
+Note `sys_clk=54 MHz` in the header: the host read that from the frame. It never had to be
+told. Had the clock code not been added first, the host would have assumed 24 MHz and
+reported every sample rate as 44 % of its true value — silently, with no error raised. That
+was the single most dangerous part of this change, and it was closed before the clock moved.
+
+### What 54 MHz buys
+
+| | at 24 MHz | at 54 MHz |
+|---|---|---|
+| UART rates above 6 Mbaud | 8, 12 | **6.75, 7.71, 9, 10.8, 13.5, 18** |
+| clocks per bit at ~12 Mbaud | 2 | **5** (10.8 Mbaud) |
+| max sample rate | 46,875 Hz (`DIV=8`) | 46,875 Hz (`DIV=18`) |
+
+Six test points above 6 Mbaud where there were two, and five clocks per bit where there were
+two. Link 1's ceiling can now be *located* rather than bracketed in a 4 Mbaud-wide gap.

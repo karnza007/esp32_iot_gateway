@@ -43,11 +43,11 @@ PLLVR pllvr_inst (
 
 defparam pllvr_inst.FCLKIN = "27";
 defparam pllvr_inst.DYN_IDIV_SEL = "false";
-defparam pllvr_inst.IDIV_SEL = 8;
+defparam pllvr_inst.IDIV_SEL = 0;
 defparam pllvr_inst.DYN_FBDIV_SEL = "false";
-defparam pllvr_inst.FBDIV_SEL = 7;
+defparam pllvr_inst.FBDIV_SEL = 1;
 defparam pllvr_inst.DYN_ODIV_SEL = "false";
-defparam pllvr_inst.ODIV_SEL = 32;
+defparam pllvr_inst.ODIV_SEL = 16;
 defparam pllvr_inst.PSDA_SEL = "0000";
 defparam pllvr_inst.DYN_DA_EN = "true";
 defparam pllvr_inst.DUTYDA_SEL = "1000";

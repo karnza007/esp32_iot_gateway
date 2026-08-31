@@ -18,10 +18,15 @@
 // the sample rate on its own instead of being edited in lockstep.
 
 module top_module #(
+    // System clock in MHz, as produced by the PLL. Travels to the host in `cfg`
+    // so the sample rate is derived from what the FPGA REPORTS, never from a
+    // constant the host assumes. Three separate bugs in this project came from a
+    // value written in one place and assumed in another; this closes the last one.
+    parameter integer SYS_CLK_MHZ = 54,
     // fs = 24 MHz / (64 * BCLK_DIV).  25:15.000k  20:18.750k  16:23.4375k
     //                                  12:31.250k  10:37.500k   8:46.875k (max)
-    parameter integer BCLK_DIV    = 25,
-    parameter integer CLK_PER_BIT = 12,   // 12 -> 2,000,000 baud
+    parameter integer BCLK_DIV    = 56,
+    parameter integer CLK_PER_BIT = 27,   // 54 MHz / 27 = 2,000,000 baud
     parameter integer NUM_CH      = 1     // channels captured per frame
 )(
     input  wire clk,         // 27 MHz crystal (pin 45)
@@ -47,10 +52,14 @@ module top_module #(
     wire rst_n = rst & pll_lock;
 
     // ---- configuration word echoed in every frame header ----
-    //   [7:0]   BCLK_DIV   host computes fs = 24e6 / (64 * BCLK_DIV)
+    //   [7:0]   BCLK_DIV   host computes fs = SYS_CLK / (64 * BCLK_DIV)
     //   [9:8]   NUM_CH
-    //   [15:10] reserved, must read 0
-    wire [15:0] cfg = {6'd0, NUM_CH[1:0], BCLK_DIV[7:0]};
+    //   [15:10] clock code = SYS_CLK_MHZ / 6    (24 -> 4, 54 -> 9, 96 -> 16)
+    //                        0 means "legacy bitstream, assume 24 MHz"
+    //   6 MHz units, not 12: 54 MHz is not a multiple of 12, and picking the
+    //   coarser unit first would have silently reported 48 MHz for a 54 MHz build.
+    localparam [5:0] CLK_CODE = SYS_CLK_MHZ / 6;
+    wire [15:0] cfg = {CLK_CODE, NUM_CH[1:0], BCLK_DIV[7:0]};
 
     // ---- I2S capture ----
     wire [15:0] sample;
