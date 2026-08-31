@@ -14,11 +14,12 @@ import os
 import sys
 
 FPGA_CLK = 24_000_000
-LINK1_BPS = 200_000          # FPGA -> ESP32   @ 2 Mbaud
-LINK2_BPS = 92_160           # ESP32 -> host   @ 921600
+LINK1_BPS = 200_000          # FPGA -> ESP32 @ 2 Mbaud (fixed for the whole project)
+LINK2_DEFAULT_BAUD = 921_600  # only for CSVs written before link2_baud was recorded
 
 
-def summarize(path: str, keep_first: bool = False) -> dict | None:
+def summarize(path: str, keep_first: bool = False,
+              link2_baud: int | None = None) -> dict | None:
     with open(path, newline="") as f:
         rows = list(csv.DictReader(f))
     if not rows:
@@ -41,6 +42,16 @@ def summarize(path: str, keep_first: bool = False) -> dict | None:
     seen = ok + cks
     expected = seen + lost
     duration = float(body[-1]["t"]) - float(body[0]["t"]) + 1.0
+
+    # link 2's capacity is a property of THE RUN, not a constant: it is swept in
+    # M3 phase C. Newer CSVs record it; older ones predate the column.
+    if link2_baud is None:
+        if "link2_baud" in body[0] and int(body[0]["link2_baud"]):
+            link2_baud = int(body[0]["link2_baud"])
+        else:
+            link2_baud = LINK2_DEFAULT_BAUD
+    link2_bps = link2_baud / 10
+    bclk_div = int(body[0].get("bclk_div") or 0)
 
     verdicts = {}
     for r in body:
@@ -69,11 +80,17 @@ def summarize(path: str, keep_first: bool = False) -> dict | None:
         "wire_Bps": fmean("wire_Bps"),
         "verdict": worst,
         "verdicts": verdicts,
+        "link2_baud": link2_baud,
+        "link2_bps": link2_bps,
+        "bclk_div": bclk_div,
+        "assumed_baud": "link2_baud" not in body[0] or not int(body[0].get("link2_baud") or 0),
     }
 
 
 def report(s: dict) -> str:
-    return f"""{s['file']}
+    div = f"BCLK_DIV={s['bclk_div']}" if s['bclk_div'] else "BCLK_DIV=?"
+    note = "  (baud not recorded in CSV — assumed)" if s['assumed_baud'] else ""
+    return f"""{s['file']}   [{div}, link 2 = {s['link2_baud']:,} baud = {s['link2_bps']:,.0f} B/s{note}]
   duration           {s['seconds']:.0f} s ({s['intervals']} one-second intervals)
   frames received    {s['frames_seen']}  (of {s['frames_expected']} expected)
   frames intact      {s['frames_ok']}
@@ -85,7 +102,7 @@ def report(s: dict) -> str:
   bytes on the wire  {s['received_Bps']:,.0f} B/s   (everything that arrived, intact or not)
   delivered payload  {s['payload_Bps']:,.0f} B/s   (usable audio only)
   delivered wire     {s['wire_Bps']:,.0f} B/s   \
-= {100*s['wire_Bps']/LINK1_BPS:.0f} % of link 1, {100*s['wire_Bps']/LINK2_BPS:.0f} % of link 2
+= {100*s['wire_Bps']/LINK1_BPS:.0f} % of link 1, {100*s['wire_Bps']/s['link2_bps']:.0f} % of link 2
   verdict            {s['verdict']}   {s['verdicts']}"""
 
 
@@ -99,7 +116,7 @@ def md_row(s: dict) -> str:
     return (f"| `{s['file']}` | {s['seconds']:.0f} | {s['frames_ok']} | {s['frames_lost']} "
             f"| {100*s['drop_rate']:.2f} | {s['checksum_errors']} | {s['ovf_bytes']:,} "
             f"| {s['frames_short']} | {s['wire_Bps']:,.0f} "
-            f"| {100*s['wire_Bps']/LINK2_BPS:.0f} | {s['verdict']} |")
+            f"| {100*s['wire_Bps']/s['link2_bps']:.0f} | {s['verdict']} |")
 
 
 def main() -> int:
@@ -107,11 +124,13 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", nargs="+")
     ap.add_argument("--markdown", action="store_true", help="emit a markdown table")
+    ap.add_argument("--link2-baud", type=int, default=None,
+                    help="override link 2 baud (for CSVs written before it was recorded)")
     ap.add_argument("--keep-first", action="store_true",
                     help="include the first interval (startup resync artefact)")
     a = ap.parse_args()
 
-    summaries = [s for s in (summarize(p, a.keep_first) for p in a.csv) if s]
+    summaries = [s for s in (summarize(p, a.keep_first, a.link2_baud) for p in a.csv) if s]
     if not summaries:
         return 1
     if a.markdown:

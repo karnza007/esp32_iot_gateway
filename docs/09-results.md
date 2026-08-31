@@ -34,6 +34,7 @@ Wire rate for one channel: `fs / 512 × 1036` B/s.
 | `run-n25-null.csv` | 33 | 959 | 0 | 0.00 | 0 | 0 | 0 | 30,348 | 33 | OK |
 | `run-positive-control.csv` | 211 | 0 | 0 | 0.00 | 6175 | 1,133,450 | 6175 | 0 | 0 | LINK SATURATED (FPGA FIFO) |
 | `run-n25-null-after.csv` | 49 | 1439 | 0 | 0.00 | 0 | 0 | 0 | 30,358 | 33 | OK |
+| `m3-phase0-null-2M.csv` | 59 | 1736 | 0 | 0.00 | 0 | 0 | 0 | 30,337 | 15 | OK |
 
 ---
 
@@ -192,3 +193,55 @@ on this.
 
 **Repeatability.** Three separate null runs (33 s, 49 s, and an earlier 191 s) measured the
 wire rate at 30,348 / 30,358 / — B/s against 30,352 predicted. Spread under 0.04 %.
+
+
+---
+
+## M3-PHASE0 — link 2 raised to 2 Mbaud
+
+**2026-08-31** · `BCLK_DIV = 25`, **link 2 = 2,000,000 baud**, one channel
+· raw: `data/m3-phase0-null-2M.csv`
+
+**Question.** Link 2 ran at 921,600 baud because that value was inherited from M1, never
+chosen. Can the ESP32's UART0 and the CH9102 bridge actually sustain 2,000,000 baud? If
+not, every M3 result would be contaminated by an undiagnosed ceiling.
+
+**Result — PASS. The CH9102 sustains 2 Mbaud cleanly.**
+
+```
+  duration           59 s (59 one-second intervals)
+  frames received    1736  (of 1736 expected)
+  frames intact      1736
+  frames lost 0      checksum errors 0      short frames 0      overflow 0
+  delivered wire     30,337 B/s   = 15 % of link 1, 15 % of link 2
+  verdict            OK   in all 59 intervals
+```
+
+Identical behaviour to 921,600, with the chain's ceiling more than doubled: link 2 goes
+from 92,160 B/s to 200,000 B/s, matching link 1. **Both links are now 200,000 B/s and
+neither is privileged as "the bottleneck".**
+
+**Consequence for M3.** A single INMP441 tops out at 94,849 B/s (`BCLK_DIV = 8`, limited by
+the microphone's own 3.2 MHz SCK ceiling), which is only **47 % of either link**. One
+microphone can no longer saturate this chain — hence the three-phase design in
+[`plans/m3-load-sweep.md`](plans/m3-load-sweep.md), which locates the same knee by raising
+demand and by lowering capacity.
+
+### A measurement bug this run exposed
+
+The summary tool reported "33 % of link 2" for a run at 2 Mbaud, because link 2's capacity
+was a **module-level constant** while it is in fact a **property of the run** — and M3
+phase C sweeps it deliberately. Every phase C data point would have been mislabelled.
+
+Fixed twice over:
+
+- the viewer now records `link2_baud`, `bclk_div` and `channels` **in the CSV itself**, so
+  a data file states the conditions it was captured under, exactly as the `cfg` field
+  already does for the FPGA side;
+- `summarize_run.py` reads those columns, falls back for older files, says so when it is
+  falling back, and accepts `--link2-baud` to override.
+
+Third time this project has been caught by the same class of error: **a parameter written
+in one place and assumed in another.** The others were `CLK_PER_BIT`/`FPGA_BAUD` and
+`SAMPLE_RATE` in the viewer. The fix each time is to make the data self-describing rather
+than to remember harder.

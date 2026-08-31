@@ -185,11 +185,14 @@ mistake here would silently mislabel a data point.
 
 *(fill in from `summarize_run.py --markdown`)*
 
-### Phase 0 — link 2 at 2 Mbaud, null
+### Phase 0 — link 2 at 2 Mbaud, null — **PASS**
 
 | run | s | frames ok | lost | drop % | cksum err | ovf bytes | short | wire B/s | verdict |
 |-----|---|-----------|------|--------|-----------|-----------|-------|----------|---------|
-| | | | | | | | | | |
+| `m3-phase0-null-2M.csv` | 59 | 1736 | 0 | 0.00 | 0 | 0 | 0 | 30,337 | OK |
+
+The CH9102 sustains 2 Mbaud cleanly — 1736/1736 frames intact over 59 s. H4's early
+falsifier did **not** fire: the bridge delivers its nominal rate.
 
 ### Phase A — sweep `BCLK_DIV`, link 2 = 2 Mbaud
 

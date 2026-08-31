@@ -385,13 +385,18 @@ class FrameReader:
                 del buf[:j]
 
 # ---------------------------------------------------------------- reporting
-CSV_FIELDS = ["t", "frames_ok", "frames_lost", "drop_rate", "ovf_delta", "ovf_total",
+CSV_FIELDS = ["t", "link2_baud", "bclk_div", "channels",
+              "frames_ok", "frames_lost", "drop_rate", "ovf_delta", "ovf_total",
               "checksum_errors", "frames_short", "bytes_missing",
               "resync_events", "bytes_skipped", "payload_Bps", "wire_Bps", "verdict"]
 
 
-def csv_row(iv: LinkStats, t: float) -> dict:
+def csv_row(iv: LinkStats, t: float, link2_baud: int = 0,
+            bclk_div: int = 0, channels: int = 0) -> dict:
     return {
+        "link2_baud": link2_baud,
+        "bclk_div": bclk_div,
+        "channels": channels,
         "t": round(t, 3),
         "frames_ok": iv.frames_ok,
         "frames_lost": iv.frames_lost,
@@ -498,7 +503,8 @@ def main() -> int:
             return
         print(format_line(iv, fs))
         if csv_writer:
-            csv_writer.writerow(csv_row(iv, time.monotonic() - t0))
+            csv_writer.writerow(csv_row(iv, time.monotonic() - t0,
+                                        args.baud, cfg & 0xFF, nch))
             csv_file.flush()
 
     # ---------------- headless mode ----------------
@@ -562,7 +568,8 @@ def main() -> int:
             iv, tot = reader.snapshot()
             print(format_line(iv, fs))
             if csv_writer:
-                csv_writer.writerow(csv_row(iv, now - t0))
+                csv_writer.writerow(csv_row(iv, now - t0,
+                                            args.baud, cfg & 0xFF, nch))
                 csv_file.flush()
             status_text[0] = (
                 f"{iv.verdict()}\n"
