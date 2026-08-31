@@ -85,8 +85,9 @@ def autodetect_port() -> str | None:
     if not cands:
         return None
     if len(cands) > 1:
-        print(f"Multiple serial ports found: {', '.join(cands)}")
-        print(f"Using {cands[0]}. Pass one explicitly if that is wrong.")
+        # stderr, not stdout: tools compose these on one line with their own output
+        print(f"Multiple serial ports found: {', '.join(cands)}", file=sys.stderr)
+        print(f"Using {cands[0]}. Pass one explicitly if that is wrong.", file=sys.stderr)
     return cands[0]
 
 

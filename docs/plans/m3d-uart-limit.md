@@ -144,13 +144,43 @@ expected to hold** — two microphones will not be enough to break the chain.
 
 *(fill in)*
 
-### D1 — link 1 ceiling
+### D1 — link 1 ceiling — **partial, interrupted**
 
-| `CLK_PER_BIT` | baud | byte rate | sync words | drop % | verdict |
+**First pass (sync-word counting, MODE_DIAG, light load ~30 kB/s):**
+
+| `CLK_PER_BIT` | baud | result |
+|---|---|---|
+| 12 | 2,000,000 | OK |
+| 8 | 3,000,000 | OK |
+| 6 | **4,000,000** | **OK — H5 held** |
+| 5 | 4,800,000 | OK |
+| 4 | 6,000,000 | OK |
+| 3 | 8,000,000 | **LINK1 FAIL** (sync 0/s, 50 kB/s of garbage) |
+
+**Then 8 Mbaud passed twice on re-test**, with the edits verified as applied. The boundary is
+therefore **intermittent, not sharp** — and a marginal link is worse than a failed one,
+because it works in a demo and quietly corrupts data in a measurement.
+
+**Method revised.** Sync-word counting only asks "did any frame survive?"; a link with a rare
+bit error still shows plenty of sync words while damaging payloads. Second pass runs
+MODE_PUMP at the **highest data rate** (`BCLK_DIV = 8`, 95 kB/s — three times the bits) with
+link 2 pinned at a known-good, 48 %-loaded 2 Mbaud, and counts **checksum and header errors
+at the host**. Every error is then attributable to link 1.
+
+**Second pass (error rate at 95 kB/s, 45 s per point):**
+
+| link 1 baud | frames | bad payload | bad header | corrupt | verdict |
 |---|---|---|---|---|---|
-| | | | | | |
+| 2,000,000 | 4044 | 0 | 0 | **0.000 %** | CLEAN |
+| 4,000,000 | 4045 | 0 | 0 | **0.000 %** | CLEAN |
+| 6,000,000 | 4048 | 0 | 0 | **0.000 %** | CLEAN |
+| 8,000,000 | 1010 (11 s) | 0 | 0 | 0.000 % | *interrupted — inconclusive* |
 
-**Highest reliable link 1 rate: ______**
+**Highest rate proven clean so far: 6,000,000 baud** — 600,000 B/s, three times the 2 Mbaud
+used for all of M3, with zero errors in 4048 frames.
+
+8 Mbaud remains open: clean for 11 s, but it failed once under the coarser test, so it needs
+a full-length run before it can be claimed. The run was stopped part-way to unplug the boards.
 
 ### D2 — link 2 ceiling
 
