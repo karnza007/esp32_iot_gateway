@@ -116,7 +116,8 @@ def md_row(s: dict) -> str:
     return (f"| `{s['file']}` | {s['seconds']:.0f} | {s['frames_ok']} | {s['frames_lost']} "
             f"| {100*s['drop_rate']:.2f} | {s['checksum_errors']} | {s['ovf_bytes']:,} "
             f"| {s['frames_short']} | {s['wire_Bps']:,.0f} "
-            f"| {100*s['wire_Bps']/s['link2_bps']:.0f} | {s['verdict']} |")
+            f"| {100*s['wire_Bps']/s['link2_bps']:.0f}{'*' if s['assumed_baud'] else ''} "
+            f"| {s['verdict']} |")
 
 
 def main() -> int:
@@ -137,6 +138,9 @@ def main() -> int:
         print(MD_HEADER)
         for s in summaries:
             print(md_row(s))
+        if any(x["assumed_baud"] for x in summaries):
+            print("\n`*` link 2 baud not recorded in that CSV; "
+                  f"assumed {LINK2_DEFAULT_BAUD:,}. Pass --link2-baud to correct.")
     else:
         for s in summaries:
             print(report(s))

@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import csv
 import glob
+import os
 import sys
 import threading
 import time
@@ -429,6 +430,8 @@ def main() -> int:
                     help="serial port (default: first usbmodem/wchusbserial)")
     ap.add_argument("--csv", default=None,
                     help="append per-second statistics to this CSV file")
+    ap.add_argument("--append", action="store_true",
+                    help="append to an existing --csv instead of refusing")
     ap.add_argument("--baud", type=int, default=BAUD,
                     help=f"link 2 baud; must match HOST_BAUD in the sketch "
                          f"(default {BAUD})")
@@ -489,7 +492,17 @@ def main() -> int:
     csv_writer = None
     csv_file = None
     if args.csv:
-        csv_file = open(args.csv, "a", newline="")
+        # Refuse to append silently. The viewer used to open in "a" mode, so
+        # re-running a sweep point to the same file concatenated two runs into one
+        # CSV -- which happened, and put a stale-bitstream run and a good run in the
+        # same file. Every measurement must be one run, or the summary is a blend.
+        if os.path.exists(args.csv) and os.path.getsize(args.csv) > 0 and not args.append:
+            print(f"{args.csv} already exists. A sweep point must be one run.\n"
+                  "  --append   add to it anyway\n"
+                  "  or delete/rename it, or choose another name.", file=sys.stderr)
+            reader.stop()
+            return 1
+        csv_file = open(args.csv, "a" if args.append else "w", newline="")
         csv_writer = csv.DictWriter(csv_file, fieldnames=CSV_FIELDS)
         if csv_file.tell() == 0:
             csv_writer.writeheader()
