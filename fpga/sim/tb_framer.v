@@ -23,11 +23,27 @@ module tb_framer;
     reg  [15:0] sample = 0;
     reg         sample_valid = 0;
     reg         tx_ready = 0;
+    reg         slow_drain = 0;          // model a real UART: 1 byte every DRAIN_PERIOD
+    integer     drain_cnt = 0;
+    localparam integer DRAIN_PERIOD = 900;   // sustained overload, deficit exceeds FIFO depth
     wire [7:0]  tx_data;
     wire        tx_valid;
     wire [15:0] ovf_count, seq_count;
 
     always #5 clk = ~clk;                      // 100 MHz sim clock (timing irrelevant)
+
+    // slow-drain model: tx_ready pulses for one cycle every DRAIN_PERIOD cycles
+    always @(posedge clk) begin
+        if (slow_drain) begin
+            if (drain_cnt >= DRAIN_PERIOD-1) begin
+                drain_cnt = 0;
+                tx_ready  = 1'b1;
+            end else begin
+                drain_cnt = drain_cnt + 1;
+                tx_ready  = 1'b0;
+            end
+        end
+    end
 
     framer #(.FIFO_DEPTH(FIFO_DEPTH), .FRAME_SAMPLES(FRAME_SAMPLES)) dut (
         .clk(clk), .rst_n(rst_n),
@@ -81,6 +97,18 @@ module tb_framer;
     function [15:0] pattern(input integer n);
         pattern = 16'h1234 + n * 16'h0111;
     endfunction
+
+    // feed a sample with a realistic gap afterwards (one I2S sample period)
+    task send_sample_spaced(input [15:0] v, input integer gap);
+        begin
+            @(posedge clk);
+            sample       <= v;
+            sample_valid <= 1'b1;
+            @(posedge clk);
+            sample_valid <= 1'b0;
+            repeat (gap) @(posedge clk);
+        end
+    endtask
 
     // feed one sample into the framer
     task send_sample(input [15:0] v);
@@ -138,6 +166,8 @@ module tb_framer;
     endfunction
 
     integer good;
+    integer syncs;
+    integer p;
 
     initial begin
         $dumpfile("/tmp/tb_framer.vcd");
@@ -197,6 +227,40 @@ module tb_framer;
             if (errors == 0)
                 $display("  ok  (frame at byte %0d, seq %0d, ovf %0d)",
                          good, {rx[good+5], rx[good+4]}, {rx[good+7], rx[good+6]});
+        end
+
+        // ---------------- T4: framing must survive sustained overload ----------
+        // Regression test for a fault found on hardware 2026-08-31. With no reserved
+        // FIFO space the header is pushed as 10 bytes in 10 consecutive clocks into a
+        // permanently-full FIFO, so the sync word is destroyed on EVERY frame and the
+        // receiver can never lock on. Measured: 24,957 B/s arriving, 0 sync words in 5 s.
+        $display("T4: sustained overload — sync words must still get through");
+        rxn        = 0;
+        drops      = 0;
+        slow_drain = 1'b1;
+        for (i = 11*FRAME_SAMPLES; i < 19*FRAME_SAMPLES; i = i + 1)
+            send_sample_spaced(pattern(i), 1600);   // one I2S sample period
+        slow_drain = 1'b0;
+        tx_ready   = 1'b1;
+        repeat (2000) @(posedge clk);
+
+        // count sync words in what actually made it out
+        syncs = 0;
+        for (p = 0; p <= rxn - 4; p = p + 1)
+            if (rx[p]==8'hAA && rx[p+1]==8'h55 && rx[p+2]==8'hA5 && rx[p+3]==8'h5A)
+                syncs = syncs + 1;
+
+        $display("  %0d bytes out, %0d dropped, %0d sync words (8 frames offered)",
+                 rxn, drops, syncs);
+        if (drops == 0) begin
+            $display("  FAIL: drain was not slow enough to overload — test is vacuous");
+            errors = errors + 1;
+        end
+        if (syncs < 6) begin
+            $display("  FAIL: framing did not survive overload (%0d sync words)", syncs);
+            errors = errors + 1;
+        end else begin
+            $display("  ok  (framing survived: audio was sacrificed, sync was not)");
         end
 
         // ---------------- verdict ----------------

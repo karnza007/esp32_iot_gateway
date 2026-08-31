@@ -62,6 +62,8 @@ def summarize(path: str, keep_first: bool = False) -> dict | None:
         "ovf_rate_Bps": isum("ovf_delta") / duration if duration else 0.0,
         "resync_events": isum("resync_events"),
         "bytes_skipped": isum("bytes_skipped"),
+        "frames_short": isum("frames_short") if "frames_short" in body[0] else 0,
+        "bytes_missing": isum("bytes_missing") if "bytes_missing" in body[0] else 0,
         "payload_Bps": fmean("payload_Bps"),
         "wire_Bps": fmean("wire_Bps"),
         "verdict": worst,
@@ -77,6 +79,7 @@ def report(s: dict) -> str:
   frames lost        {s['frames_lost']}  -> drop rate {100*s['drop_rate']:.2f} %
   checksum errors    {s['checksum_errors']}  -> {100*s['checksum_rate']:.2f} % of received
   FPGA overflow      {s['ovf_bytes']:,} bytes  ({s['ovf_rate_Bps']:,.0f} B/s discarded)
+  short frames       {s['frames_short']}  ({s['bytes_missing']:,} payload bytes missing)
   resync events      {s['resync_events']}  ({s['bytes_skipped']:,} bytes skipped)
   delivered payload  {s['payload_Bps']:,.0f} B/s
   delivered wire     {s['wire_Bps']:,.0f} B/s   \
@@ -93,7 +96,7 @@ MD_HEADER = ("| run | s | frames ok | lost | drop % | cksum err | ovf bytes | "
 def md_row(s: dict) -> str:
     return (f"| `{s['file']}` | {s['seconds']:.0f} | {s['frames_ok']} | {s['frames_lost']} "
             f"| {100*s['drop_rate']:.2f} | {s['checksum_errors']} | {s['ovf_bytes']:,} "
-            f"| {s['resync_events']} | {s['wire_Bps']:,.0f} "
+            f"| {s['frames_short']} | {s['wire_Bps']:,.0f} "
             f"| {100*s['wire_Bps']/LINK2_BPS:.0f} | {s['verdict']} |")
 
 

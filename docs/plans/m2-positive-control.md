@@ -1,6 +1,6 @@
 # Experiment M2-PC — Positive control for the overflow counter
 
-**Status:** planned, not yet run
+**Status:** first attempt run 2026-08-31 — it FOUND A REAL DESIGN FLAW; re-run pending
 **Date planned:** 2026-08-31
 **Depends on:** M2 null test (PASS, `data/run-n25-null.csv`)
 
@@ -141,30 +141,104 @@ python tools/summarize_run.py data/run-n25-null-after.csv
 
 ## 8. Notes / deviations
 
-**Two host-side bugs found while attempting the first run (2026-08-31).** Both were in the
-viewer, not the hardware, and both were caused by the same wrong assumption: that a
-measurement run always contains at least one intact frame.
+The first attempt did not produce the predicted numbers. It produced something better: it
+found a fault that would have made the entire M3 sweep unmeasurable.
 
-1. **Baud mismatch.** The FPGA was reprogrammed to 250,000 baud but the ESP32 sketch had
-   only been *edited*, not *uploaded*, so it was still listening at 2,000,000. Every byte
-   was misread and no sync word was ever found. `CLK_PER_BIT` and `FPGA_BAUD` describe the
-   same wire and must always be flashed together — the same physical parameter configured
-   in two places is a design weakness of the UART transport, and one that SPI partly avoids
-   because the FPGA drives the clock and the receiver is not told the rate in advance.
+### 8.1 Baud mismatch (operator error, quickly found)
 
-2. **The viewer refused to start under saturation — the exact condition it was built to
-   measure.** Startup waited for one checksum-valid frame before proceeding. At an 18 %
-   byte-loss rate no frame is ever intact, so the program timed out and exited having
-   reported nothing. The prediction table in §4 said `frames_ok ≈ 0` and the startup path
-   contradicted it; the plan was right and the code was wrong.
+The FPGA was reprogrammed to 250,000 baud but the ESP32 sketch had only been *edited*, not
+*uploaded*, so it still listened at 2,000,000. Every byte was misread.
 
-   Fixed: a frame whose payload fails its checksum can still start the run if its **header**
-   is plausible (`plausible_cfg()` sanity-checks `BCLK_DIV`, channel count and the reserved
-   bits). Statistics are now reported before, and independently of, the audio plot, so the
-   numbers appear even when there is no intact audio to draw. The failure message also
-   distinguishes "no bytes at all" from "bytes arriving but mangled", which points straight
-   at a baud mismatch.
+`CLK_PER_BIT` and `FPGA_BAUD` describe the same wire and must always be flashed together.
+**One physical parameter configured in two places is a design weakness of the UART
+transport** — one that SPI partly removes, because the FPGA drives the clock and the
+receiver is never told the rate in advance.
 
-   Regression test added: `tools/test_viewer_parser.py` now includes a fully-saturated
-   stream in which **no** frame is intact, and asserts the reader still starts, still
-   recovers `cfg`, and still returns the correct verdict.
+### 8.2 The viewer refused to run under saturation
+
+Startup waited for one checksum-valid frame. At an 18 % byte-loss rate no frame is ever
+intact, so the viewer timed out having reported nothing — it refused to run in exactly the
+condition it exists to measure. §4 of this plan predicted `frames_ok ≈ 0`; the code
+contradicted the plan.
+
+Fixed: a frame with a corrupt payload can start the run if its **header** is plausible, and
+statistics are now reported independently of whether there is any audio to draw.
+
+### 8.3 THE REAL FINDING: under sustained overload the framing destroys itself
+
+With the baud rates matched, a raw port probe (`tools/probe_port.py`) showed:
+
+```
+  bytes received   126,976 in 5.1 s  ->  24,957 B/s
+  sync words found 0
+```
+
+**24,957 B/s is exactly link 1's capacity** — the link was working perfectly and running
+flat out. Yet in five seconds **not one sync word arrived**.
+
+The cause is a priority inversion in `framer.v`:
+
+| | |
+|---|---|
+| UART byte time at 250 kbaud | 10 × 96 = **960 clocks** |
+| I2S sample period at `BCLK_DIV=25` | 64 × 25 = **1600 clocks** |
+| drain capacity per sample period | 1600 / 960 = **1.67 bytes** |
+| production per sample period | **2 bytes** |
+| deficit | 0.33 bytes per sample → **the FIFO sits permanently full** |
+
+The header is pushed as **10 bytes in 10 consecutive clock cycles**. During those 10
+cycles the UART drains 10/960 = **0.01 bytes**. No space is created, so the entire header —
+sync word included — is discarded on **every single frame**.
+
+The audio bytes survive because they trickle in two at a time, spread over 1600 cycles.
+So the stream degrades in exactly the wrong direction: **the payload survives and the
+framing dies.** The receiver can then never lock on, never read `seq`, `ovf` or `cfg`, and
+the loss becomes unmeasurable at precisely the moment it matters most.
+
+### 8.4 Fix: framing bytes get reserved FIFO space
+
+`framer.v` now classifies every push as framing or audio (`push_hdr`). Audio bytes are
+refused once occupancy reaches `FIFO_DEPTH - HDR_RESERVE` (48 of 64); framing bytes may use
+the full depth. `HDR_RESERVE = 16` covers the 10-byte header plus the 2-byte checksum with
+margin.
+
+The stream now degrades the right way round: **audio is sacrificed, framing is not.**
+
+Regression test `tb_framer` T4 reproduces the hardware condition — a sustained drain slow
+enough that the deficit exceeds the FIFO depth — and requires the sync words to survive:
+
+```
+T4: sustained overload — sync words must still get through
+  161 bytes out, 62 dropped, 8 sync words (8 frames offered)     HDR_RESERVE = 16  -> PASS
+  175 bytes out, 48 dropped, 4 sync words (8 frames offered)     HDR_RESERVE = 0   -> FAIL
+```
+
+The test genuinely discriminates: half the frames lose their sync word without the fix.
+
+### 8.5 Host: frames are now delimited by the sync word, not by a fixed length
+
+Because overload makes frames arrive **short**, a fixed-length read after each sync would
+run past the next sync word, swallow a frame, and report the overrun as loss that never
+happened. The reader now splits the stream on sync words, so **the length of each frame is
+itself a measurement**: `bytes_missing = 1036 − observed`, which cross-checks directly
+against the `ovf` field in the header.
+
+New reported quantities: `frames_short` and `bytes_missing`.
+
+### 8.6 What this is worth
+
+This is the strongest result the project has produced so far, and it came from a test whose
+only job was to check that a counter could count:
+
+> A naive framer loses its own framing before it loses its data. Under sustained overload
+> the header — the part that makes loss measurable — is the part most likely to be
+> discarded, because it is pushed as a burst into a permanently-full buffer. Measured on
+> hardware: 24,957 B/s of audio delivered and zero sync words in five seconds. Giving
+> framing bytes reserved buffer space inverts the priority, so the link degrades by losing
+> audio while remaining measurable.
+
+### 8.7 Re-run required
+
+`framer.v` changed, so the FPGA must be re-synthesised and re-programmed before the
+positive control can be completed. The predictions in §4 stand, with one addition:
+`frames_short` should be ~29/s and `bytes_missing` ~5,350 B/s, matching the `ovf` rate.

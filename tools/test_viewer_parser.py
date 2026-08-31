@@ -60,6 +60,7 @@ def main() -> int:
     stream += frame(7, 7, CFG, sig, corrupt=True)   # checksum error
     stream += frame(8, 7, CFG, sig)
 
+    stream += V.SYNC          # delimits the final frame for the sync-split parser
     r = build_reader(stream)
     r.start()
     r.wait_first(2.0)
@@ -98,13 +99,28 @@ def main() -> int:
     # measure. An earlier version gated startup on a checksum-valid frame and so
     # refused to run in exactly the case it was built for.
     print("\n  --- saturated link: every frame corrupt ---")
-    sat = b"".join(frame(i, 100 * i, CFG, sig, corrupt=True) for i in range(6))
+    sat = b"".join(frame(i, 100 * i, CFG, sig, corrupt=True) for i in range(6)) + V.SYNC
     r2 = build_reader(sat)
     r2.start()
     started = r2.wait_first(2.0)
     time.sleep(0.8)
     r2.stop()
     _, tot2 = r2.snapshot()
+
+    # ---- test 3: frames arriving SHORT, as under real FPGA overflow ----------
+    print("\n  --- short frames: FPGA dropped payload bytes in flight ---")
+    f = frame(0, 0, CFG, sig)
+    short = (f[:600] + f[783:]) + frame(1, 183, CFG, sig) + V.SYNC   # 183 bytes gone
+    r3 = build_reader(short)
+    r3.start(); r3.wait_first(2.0); time.sleep(0.6); r3.stop()
+    _, tot3 = r3.snapshot()
+    for name, got, want in [("frames_short", tot3.frames_short, 1),
+                            ("bytes_missing", tot3.bytes_missing, 183),
+                            ("frames_ok", tot3.frames_ok, 1),
+                            ("verdict", tot3.verdict(), "LINK SATURATED (FPGA FIFO)")]:
+        ok = got == want
+        bad += not ok
+        print(f"  {'ok  ' if ok else 'FAIL'} {name:<16} got {got!r:<28} want {want!r}")
 
     checks2 = [
         ("started",         started,                     True),

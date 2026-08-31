@@ -118,6 +118,8 @@ class LinkStats:
     checksum_errors: int = 0
     resync_events: int = 0          # times the stream had to be re-found
     bytes_skipped: int = 0          # garbage bytes discarded while re-finding it
+    frames_short: int = 0           # frames that arrived with bytes missing
+    bytes_missing: int = 0          # how many bytes those frames were missing
     payload_bytes: int = 0          # audio bytes delivered
     wire_bytes: int = 0             # payload + framing, i.e. what the link carried
     ovf_delta: int = 0
@@ -131,6 +133,8 @@ class LinkStats:
         self.checksum_errors = 0
         self.resync_events = 0
         self.bytes_skipped = 0
+        self.frames_short = 0
+        self.bytes_missing = 0
         self.payload_bytes = 0
         self.wire_bytes = 0
         self.ovf_delta = 0
@@ -157,7 +161,7 @@ class LinkStats:
 
     def verdict(self) -> str:
         """Attribute the loss to a stage. This is the headline result."""
-        if self.ovf_delta > 0:
+        if self.ovf_delta > 0 or self.bytes_missing > 0:
             return "LINK SATURATED (FPGA FIFO)"
         if self.frames_lost > 0:
             return "GATEWAY LOSS (ESP32/USB)"
@@ -224,40 +228,19 @@ class FrameReader:
             iv = LinkStats(**{k: getattr(self.stats, k) for k in
                               ("frames_ok", "frames_expected", "frames_lost",
                                "checksum_errors", "resync_events", "bytes_skipped",
+                               "frames_short", "bytes_missing",
                                "payload_bytes", "wire_bytes", "ovf_delta", "ovf_total")})
             iv.t_start = self.stats.t_start
             self.stats.reset_interval()
             tot = LinkStats(**{k: getattr(self.total, k) for k in
                                ("frames_ok", "frames_expected", "frames_lost",
                                 "checksum_errors", "resync_events", "bytes_skipped",
+                                "frames_short", "bytes_missing",
                                 "payload_bytes", "wire_bytes", "ovf_delta", "ovf_total")})
             tot.t_start = self.total.t_start
         return iv, tot
 
     # -- internals ---------------------------------------------------------
-    def _resync(self) -> int:
-        """Scan byte-at-a-time until the 4-byte sync matches.
-
-        Returns the number of bytes discarded before the match, or -1 if stopped.
-        In a healthy stream the sync sits immediately after the previous frame, so
-        this returns 0 every time; any non-zero value means bytes were lost or
-        corrupted and the stream had to be re-found.
-        """
-        matched = 0
-        skipped = 0
-        while not self._stop.is_set():
-            b = self.ser.read(1)
-            if not b:
-                continue
-            if b[0] == SYNC[matched]:
-                matched += 1
-                if matched == len(SYNC):
-                    return skipped
-            else:
-                skipped += matched + 1
-                matched = 1 if b[0] == SYNC[0] else 0
-        return -1
-
     def _account(self, seq: int, ovf: int, good: bool) -> None:
         """Update loss/integrity counters for one received frame."""
         with self._lock:
@@ -296,57 +279,113 @@ class FrameReader:
                 s.ovf_delta += delta
                 s.ovf_total = self._ovf_accum
 
+    def _process(self, frame: bytes) -> None:
+        """Handle one sync-delimited frame: everything from one sync word to the next.
+
+        Its LENGTH is a measurement. A healthy frame is exactly FRAME_BYTES; a
+        shorter one means the FPGA discarded that many payload bytes on its way
+        out, which cross-checks directly against the `ovf` field in the header.
+        """
+        n = len(frame)
+        if n < HEADER_BYTES:
+            with self._lock:
+                for st in (self.stats, self.total):
+                    st.resync_events += 1
+                    st.bytes_skipped += n
+            return
+
+        if n > FRAME_BYTES:
+            # Longer than a frame: either junk between frames, or a sync word was
+            # itself destroyed and two frames merged. Take the leading FRAME_BYTES
+            # as the frame and charge the remainder to skipped bytes.
+            extra = n - FRAME_BYTES
+            with self._lock:
+                for st in (self.stats, self.total):
+                    st.resync_events += 1
+                    st.bytes_skipped += extra
+            frame = frame[:FRAME_BYTES]
+            n = FRAME_BYTES
+
+        seq = int.from_bytes(frame[4:6], "little")
+        ovf = int.from_bytes(frame[6:8], "little")
+        cfg = int.from_bytes(frame[8:10], "little")
+        self.frames_seen_any += 1
+
+        good = False
+        if n == FRAME_BYTES:
+            payload = frame[HEADER_BYTES:HEADER_BYTES + PAYLOAD_BYTES]
+            want = int.from_bytes(frame[HEADER_BYTES + PAYLOAD_BYTES:], "little")
+            good = (sum(payload) & 0xFFFF) == want
+            if good:
+                samples = np.frombuffer(payload, dtype="<i2")
+                with self._lock:
+                    self._latest = samples
+                    self._cfg = cfg
+                self._first.set()
+        else:
+            with self._lock:
+                for st in (self.stats, self.total):
+                    st.frames_short += 1
+                    st.bytes_missing += max(FRAME_BYTES - n, 0)
+
+        if self._cfg is None and plausible_cfg(cfg):
+            # Saturated link: payloads are shredded but headers survive, because
+            # framing bytes have reserved FIFO space. Start anyway — reporting the
+            # loss IS the result.
+            with self._lock:
+                self._cfg = cfg
+            self._first.set()
+
+        self._account(seq, ovf, good)
+
     def _run(self) -> None:
+        """Split the byte stream on sync words and hand each frame to _process.
+
+        Deliberately NOT a fixed-length read after each sync. Under overload the
+        FPGA drops payload bytes, so frames arrive SHORT; a fixed-length read would
+        run past the next sync word, silently swallow a frame, and report the
+        overrun as loss that never happened. Delimiting on the sync word instead
+        makes the frame length itself a measurement.
+        """
+        buf = bytearray()
         while not self._stop.is_set():
             try:
-                skipped = self._resync()
-                if skipped < 0:
-                    return
-                if skipped:
-                    with self._lock:
-                        for st in (self.stats, self.total):
-                            st.resync_events += 1
-                            st.bytes_skipped += skipped
-
-                body = self.ser.read(BODY_BYTES)
-                if len(body) != BODY_BYTES:
-                    continue
-
-                seq = int.from_bytes(body[0:2], "little")
-                ovf = int.from_bytes(body[2:4], "little")
-                cfg = int.from_bytes(body[4:6], "little")
-                payload = body[6:6 + PAYLOAD_BYTES]
-                want = int.from_bytes(body[6 + PAYLOAD_BYTES:], "little")
-
-                good = (sum(payload) & 0xFFFF) == want
-                self._account(seq, ovf, good)
-                self.frames_seen_any += 1
-
-                if good:
-                    samples = np.frombuffer(payload, dtype="<i2")
-                    with self._lock:
-                        self._latest = samples
-                        self._cfg = cfg
-                    self._first.set()
-                elif self._cfg is None and plausible_cfg(cfg):
-                    # Saturated link: the payload is shredded but the header is
-                    # readable. Start anyway — reporting the loss IS the result.
-                    with self._lock:
-                        self._cfg = cfg
-                    self._first.set()
-
+                chunk = self.ser.read(4096)
             except (serial.SerialException, OSError) as e:
-                # A shutdown closes the port under this thread's feet, which surfaces
-                # as "Bad file descriptor". That is expected during exit, not a fault.
                 if not self._stop.is_set():
                     print(f"[reader] serial error: {e}", file=sys.stderr)
                 return
+            if chunk:
+                buf += chunk
 
+            while True:
+                i = buf.find(SYNC)
+                if i < 0:
+                    # keep a 3-byte tail: a sync word may straddle two reads
+                    if len(buf) > 3:
+                        drop = len(buf) - 3
+                        with self._lock:
+                            for st in (self.stats, self.total):
+                                st.resync_events += 1
+                                st.bytes_skipped += drop
+                        del buf[:drop]
+                    break
+                if i > 0:                      # garbage before the sync word
+                    with self._lock:
+                        for st in (self.stats, self.total):
+                            st.resync_events += 1
+                            st.bytes_skipped += i
+                    del buf[:i]
+                j = buf.find(SYNC, len(SYNC))
+                if j < 0:
+                    break                      # frame not complete yet
+                self._process(bytes(buf[:j]))
+                del buf[:j]
 
 # ---------------------------------------------------------------- reporting
 CSV_FIELDS = ["t", "frames_ok", "frames_lost", "drop_rate", "ovf_delta", "ovf_total",
-              "checksum_errors", "resync_events", "bytes_skipped",
-              "payload_Bps", "wire_Bps", "verdict"]
+              "checksum_errors", "frames_short", "bytes_missing",
+              "resync_events", "bytes_skipped", "payload_Bps", "wire_Bps", "verdict"]
 
 
 def csv_row(iv: LinkStats, t: float) -> dict:
@@ -358,6 +397,8 @@ def csv_row(iv: LinkStats, t: float) -> dict:
         "ovf_delta": iv.ovf_delta,
         "ovf_total": iv.ovf_total,
         "checksum_errors": iv.checksum_errors,
+        "frames_short": iv.frames_short,
+        "bytes_missing": iv.bytes_missing,
         "resync_events": iv.resync_events,
         "bytes_skipped": iv.bytes_skipped,
         "payload_Bps": round(iv.throughput, 1),
@@ -370,7 +411,7 @@ def format_line(iv: LinkStats, fs: float) -> str:
     return (f"{iv.frames_ok:4d} ok  {iv.frames_lost:4d} lost "
             f"({100*iv.drop_rate:6.2f}%)  ovf {iv.ovf_delta:5d} "
             f"(tot {iv.ovf_total:5d})  cksum {iv.checksum_errors:3d}  "
-            f"resync {iv.resync_events:3d}  "
+            f"short {iv.frames_short:3d}({iv.bytes_missing:6d}B)  "
             f"wire {iv.wire_throughput/1000:7.2f} kB/s  [{iv.verdict()}]")
 
 
@@ -519,7 +560,8 @@ def main() -> int:
                 f"{iv.verdict()}\n"
                 f"drop {100*iv.drop_rate:5.2f}%   ovf {iv.ovf_delta:d} "
                 f"(tot {iv.ovf_total:d})\n"
-                f"cksum err {iv.checksum_errors:d}   resync {iv.resync_events:d}\n"
+                f"cksum err {iv.checksum_errors:d}   "
+                f"short {iv.frames_short:d} ({iv.bytes_missing:d} B)\n"
                 f"wire {iv.wire_throughput/1000:.1f} kB/s "
                 f"({100*iv.wire_throughput/LINK2_BPS:.0f}% of the 92.2 kB/s ceiling)"
             )

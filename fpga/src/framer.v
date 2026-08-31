@@ -44,7 +44,8 @@
 
 module framer #(
     parameter integer FIFO_DEPTH = 64,      // bytes; must be a power of two
-    parameter integer FRAME_SAMPLES = 512
+    parameter integer FRAME_SAMPLES = 512,
+    parameter integer HDR_RESERVE  = 16     // bytes kept free for header + checksum
 )(
     input  wire        clk,
     input  wire        rst_n,
@@ -70,9 +71,32 @@ module framer #(
     reg  [7:0]    mem [0:FIFO_DEPTH-1];
     reg  [AW:0]   wptr = 0;                             // AW+1 bits wide
     reg  [AW:0]   rptr = 0;
+    reg           push_hdr;                 // 1 = framing byte, 0 = audio byte
+
     wire [AW:0]   count = wptr - rptr;
-    wire          full  = (count >= FIFO_DEPTH);
     wire          empty = (count == 0);
+
+    // ------------------------------------------------------------------
+    // PRIORITISED ADMISSION — framing bytes outrank audio bytes
+    //
+    // Audio bytes are refused once the FIFO reaches DEPTH-HDR_RESERVE, so
+    // HDR_RESERVE bytes are always free for the next header burst. Framing bytes
+    // may use the whole depth.
+    //
+    // WHY: under sustained overload the FIFO sits permanently full. The header is
+    // pushed as 10 bytes in 10 CONSECUTIVE clock cycles, during which a 250 kbaud
+    // UART drains 0.01 bytes — so without a reservation the entire header, sync
+    // word included, is discarded on every single frame. The receiver then never
+    // finds a sync word, cannot read seq/ovf/cfg, and the loss becomes
+    // unmeasurable at exactly the moment it matters most. Measured on hardware
+    // 2026-08-31: 24,957 B/s of audio arriving, ZERO sync words in five seconds.
+    //
+    // With the reservation the stream degrades the right way round: audio is
+    // sacrificed, framing survives, and the host can still report what was lost.
+    // ------------------------------------------------------------------
+    wire full_hdr = (count >= FIFO_DEPTH);
+    wire full_pay = (count >= FIFO_DEPTH - HDR_RESERVE);
+    wire full     = push_hdr ? full_hdr : full_pay;
 
     reg           push;
     reg  [7:0]    push_byte;
@@ -111,6 +135,7 @@ module framer #(
             hdr_ovf <= 16'd0;
             scount  <= 0;
             push    <= 1'b0;
+            push_hdr  <= 1'b0;
             push_byte <= 8'd0;
         end else begin
             push <= 1'b0;                        // default: no push this cycle
@@ -129,28 +154,30 @@ module framer #(
                         end
 
                 // ---- 4-byte sync word --------------------------------------
-                P_SY0: begin push <= 1'b1; push_byte <= 8'hAA; pstate <= P_SY1; end
-                P_SY1: begin push <= 1'b1; push_byte <= 8'h55; pstate <= P_SY2; end
-                P_SY2: begin push <= 1'b1; push_byte <= 8'hA5; pstate <= P_SY3; end
-                P_SY3: begin push <= 1'b1; push_byte <= 8'h5A; pstate <= P_SQ0; end
+                P_SY0: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= 8'hAA; pstate <= P_SY1; end
+                P_SY1: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= 8'h55; pstate <= P_SY2; end
+                P_SY2: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= 8'hA5; pstate <= P_SY3; end
+                P_SY3: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= 8'h5A; pstate <= P_SQ0; end
 
                 // ---- seq / ovf / cfg, little-endian ------------------------
-                P_SQ0: begin push <= 1'b1; push_byte <= hdr_seq[7:0];  pstate <= P_SQ1; end
-                P_SQ1: begin push <= 1'b1; push_byte <= hdr_seq[15:8]; pstate <= P_OV0; end
-                P_OV0: begin push <= 1'b1; push_byte <= hdr_ovf[7:0];  pstate <= P_OV1; end
-                P_OV1: begin push <= 1'b1; push_byte <= hdr_ovf[15:8]; pstate <= P_CF0; end
-                P_CF0: begin push <= 1'b1; push_byte <= cfg[7:0];      pstate <= P_CF1; end
-                P_CF1: begin push <= 1'b1; push_byte <= cfg[15:8];     pstate <= P_LO;  end
+                P_SQ0: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= hdr_seq[7:0];  pstate <= P_SQ1; end
+                P_SQ1: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= hdr_seq[15:8]; pstate <= P_OV0; end
+                P_OV0: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= hdr_ovf[7:0];  pstate <= P_OV1; end
+                P_OV1: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= hdr_ovf[15:8]; pstate <= P_CF0; end
+                P_CF0: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= cfg[7:0];      pstate <= P_CF1; end
+                P_CF1: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= cfg[15:8];     pstate <= P_LO;  end
 
                 // ---- one sample: low byte then high byte -------------------
                 P_LO: begin
                           push      <= 1'b1;
+                          push_hdr  <= 1'b0;              // audio: yields to framing
                           push_byte <= sreg[7:0];
                           sum_q     <= sum_q + sreg[7:0];     // checksum accumulates
                           pstate    <= P_HI;
                       end
                 P_HI: begin
                           push      <= 1'b1;
+                          push_hdr  <= 1'b0;              // audio: yields to framing
                           push_byte <= sreg[15:8];
                           sum_q     <= sum_q + sreg[15:8];
                           if (scount == FRAME_SAMPLES-1) begin
@@ -165,8 +192,8 @@ module framer #(
                 // ---- 2-byte checksum trailer ------------------------------
                 // sum_q was updated by P_HI's non-blocking assignment, so it is
                 // already final by the time this state runs.
-                P_CK0: begin push <= 1'b1; push_byte <= sum_q[7:0];  pstate <= P_CK1; end
-                P_CK1: begin push <= 1'b1; push_byte <= sum_q[15:8];
+                P_CK0: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= sum_q[7:0];  pstate <= P_CK1; end
+                P_CK1: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= sum_q[15:8];
                              seq_q  <= seq_q + 1'b1;         // next frame's number
                              pstate <= P_IDLE; end
 
