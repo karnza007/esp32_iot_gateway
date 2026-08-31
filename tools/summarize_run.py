@@ -64,6 +64,7 @@ def summarize(path: str, keep_first: bool = False) -> dict | None:
         "bytes_skipped": isum("bytes_skipped"),
         "frames_short": isum("frames_short") if "frames_short" in body[0] else 0,
         "bytes_missing": isum("bytes_missing") if "bytes_missing" in body[0] else 0,
+        "received_Bps": (seen * 1036 - (isum("bytes_missing") if "bytes_missing" in body[0] else 0)) / duration if duration else 0.0,
         "payload_Bps": fmean("payload_Bps"),
         "wire_Bps": fmean("wire_Bps"),
         "verdict": worst,
@@ -81,7 +82,8 @@ def report(s: dict) -> str:
   FPGA overflow      {s['ovf_bytes']:,} bytes  ({s['ovf_rate_Bps']:,.0f} B/s discarded)
   short frames       {s['frames_short']}  ({s['bytes_missing']:,} payload bytes missing)
   resync events      {s['resync_events']}  ({s['bytes_skipped']:,} bytes skipped)
-  delivered payload  {s['payload_Bps']:,.0f} B/s
+  bytes on the wire  {s['received_Bps']:,.0f} B/s   (everything that arrived, intact or not)
+  delivered payload  {s['payload_Bps']:,.0f} B/s   (usable audio only)
   delivered wire     {s['wire_Bps']:,.0f} B/s   \
 = {100*s['wire_Bps']/LINK1_BPS:.0f} % of link 1, {100*s['wire_Bps']/LINK2_BPS:.0f} % of link 2
   verdict            {s['verdict']}   {s['verdicts']}"""

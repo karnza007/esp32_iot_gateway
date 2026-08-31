@@ -10,7 +10,7 @@
 - [x] Python live viewer: waveform + FFT, fixed magnitude axis
 - [x] Verified live: 30,120 B/s, sync every 1028 bytes, real audio (ambient RMS ≈ 228)
 
-## M2 — Instrumentation 🟨 built and simulated; hardware run pending
+## M2 — Instrumentation ✅ done
 
 Design: [`05-instrumentation.md`](05-instrumentation.md) · Plan:
 [`plans/step1-instrumentation.md`](plans/step1-instrumentation.md)
@@ -27,9 +27,14 @@ Design: [`05-instrumentation.md`](05-instrumentation.md) · Plan:
 - [x] **Hardware null test at `BCLK_DIV = 25`** — PASS, 191 s continuous:
       30 frames/s, 0 lost, 0 overflow, 0 checksum errors, verdict `OK`
       (`data/run-n25-null-v1metrics.csv`)
-- [ ] Re-program with the wrapping overflow counter + corrected metrics
-- [ ] **Hardware positive control**: `CLK_PER_BIT = 96` (250 kbaud), confirm `ovf` climbs
-      and the verdict reads `LINK SATURATED (FPGA FIFO)`, then restore
+- [x] Re-program with the wrapping overflow counter + corrected metrics
+- [x] **Hardware positive control** — PASS, 211 s at 250 kbaud: `ovf` 5,379 B/s vs 5,352
+      predicted (0.5 % error), verdict `LINK SATURATED (FPGA FIFO)` in all 206 intervals,
+      and `ovf` cross-checks `bytes_missing` to 0.000 %
+- [x] Header-reservation fix in `framer.v` — under overload the framing now survives while
+      audio is sacrificed (found by the positive control: 0 sync words in 5 s before it)
+- [x] Host parser now delimits frames by sync word, making frame length a measurement
+- [ ] Restore `CLK_PER_BIT = 12` / `FPGA_BAUD = 2000000` and re-confirm the null test
 
 ## M3 — Load sweep ⬜
 

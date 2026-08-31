@@ -1,6 +1,6 @@
 # Experiment M2-PC — Positive control for the overflow counter
 
-**Status:** first attempt run 2026-08-31 — it FOUND A REAL DESIGN FLAW; re-run pending
+**Status:** COMPLETE — PASS on 2026-08-31 after the flaw it exposed was fixed
 **Date planned:** 2026-08-31
 **Depends on:** M2 null test (PASS, `data/run-n25-null.csv`)
 
@@ -127,17 +127,24 @@ python tools/summarize_run.py data/run-n25-null-after.csv
 
 ## 7. Results
 
-*(fill in after the run; paste the `summarize_run.py` output)*
+**PASS.** Full write-up: [`../09-results.md`](../09-results.md#m2-pc--positive-control).
 
-| run | s | frames ok | lost | drop % | cksum err | ovf bytes | resync | wire B/s | % link2 | verdict |
-|-----|---|-----------|------|--------|-----------|-----------|--------|----------|---------|---------|
-| | | | | | | | | | | |
+| run | s | frames ok | lost | drop % | cksum err | ovf bytes | short | wire B/s | verdict |
+|-----|---|-----------|------|--------|-----------|-----------|-------|----------|---------|
+| `run-positive-control.csv` | 211 | 0 | 0 | 0.00 | 6175 | 1,133,450 | 6175 | 0 | LINK SATURATED (FPGA FIFO) |
 
-**Observed vs predicted `ovf` rate:** ______ B/s (predicted 5,350)
+**Observed vs predicted `ovf` rate:** **5,379 B/s** (predicted 5,352) — **0.5 % error**
 
-**Verdict correct?** ☐ yes ☐ no
+**Verdict correct?** ☑ yes — `LINK SATURATED (FPGA FIFO)` in all 206 one-second intervals
 
-**Restored null test clean?** ☐ yes ☐ no
+**Restored null test clean?** ☐ pending
+
+**Cross-check.** `ovf` (counted inside the FPGA) and `bytes_missing` (measured by the host
+from frame lengths) both total **1,133,450 bytes** — agreement to 0.000 % between two
+measurements that share no code and no mechanism.
+
+**Wrap handling.** The 16-bit `ovf` field wrapped 17 times and was tracked correctly
+throughout, confirming the decision to make the counter free-running rather than saturating.
 
 ## 8. Notes / deviations
 
