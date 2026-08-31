@@ -139,7 +139,10 @@ Details in [`docs/04-roadmap.md`](docs/04-roadmap.md).
 - [`docs/06-architecture.md`](docs/06-architecture.md) — module-by-module design.
 - [`docs/07-bringup.md`](docs/07-bringup.md) — **how to program the board and run the null test**.
 - [`docs/08-troubleshooting.md`](docs/08-troubleshooting.md) — problems hit and fixes.
-- [`docs/plans/`](docs/plans/) — implementation plans.
+- [`docs/09-results.md`](docs/09-results.md) — **every hardware run that produced a number.**
+- [`docs/plans/`](docs/plans/) — implementation and experiment plans (idea, hypothesis,
+  method, predictions, results).
+- [`docs/reports/`](docs/reports/) — weekly progress reports, with a template.
 
 ## Simulation
 

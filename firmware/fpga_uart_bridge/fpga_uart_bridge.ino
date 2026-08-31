@@ -17,7 +17,7 @@
 
 constexpr int      FPGA_RX_PIN = 18;        // ESP32-S3 GPIO <- FPGA UART TX (pin 42)
 constexpr int      FPGA_TX_PIN = 17;        // unused (no data back to the FPGA)
-constexpr uint32_t FPGA_BAUD   = 2000000;   // must match uart_tx (24 MHz / 12)
+constexpr uint32_t FPGA_BAUD   = 250000;    // TEMP positive control: must match uart_tx (24 MHz / 96). Normally 2000000.
 
 static uint8_t buf[1024];
 

@@ -22,18 +22,52 @@
 **The 3.2 MHz SCK ceiling sets the maximum sample rate.** With a 24 MHz system clock and
 a 64-BCLK frame, `BCLK = 24 MHz / N` must stay ≤ 3.2 MHz, so `N ≥ 8`:
 
-| `N` | BCLK | fs = 24 MHz / (64·N) | 1 ch payload | 2 ch payload | % of 2 Mbaud UART |
-|-----|------|----------------------|--------------|--------------|-------------------|
-| 25  | 960 kHz | 15.000 kHz  | 30 kB/s   | 60 kB/s   | 30 % |
-| 20  | 1.2 MHz | 18.750 kHz  | 37.5 kB/s | 75 kB/s   | 38 % |
-| 16  | 1.5 MHz | 23.4375 kHz | 47 kB/s   | 94 kB/s   | 47 % |
-| 12  | 2.0 MHz | 31.250 kHz  | 62.5 kB/s | 125 kB/s  | 63 % |
-| 10  | 2.4 MHz | 37.500 kHz  | 75 kB/s   | 150 kB/s  | 75 % |
-| **8** | **3.0 MHz** | **46.875 kHz** | 94 kB/s | **187.5 kB/s** | **94 %** |
+| `N` | BCLK | fs | 1-ch wire rate | % of link 1 | **% of link 2** |
+|-----|------|----|----------------|-------------|-----------------|
+| 25  | 960 kHz | 15.000 kHz  | 30.4 kB/s | 15 % | 33 % |
+| 20  | 1.2 MHz | 18.750 kHz  | 37.9 kB/s | 19 % | 41 % |
+| 16  | 1.5 MHz | 23.4375 kHz | 47.4 kB/s | 24 % | 51 % |
+| 12  | 2.0 MHz | 31.250 kHz  | 63.2 kB/s | 32 % | 69 % |
+| 10  | 2.4 MHz | 37.500 kHz  | 75.9 kB/s | 38 % | 82 % |
+| **8** | **3.0 MHz** | **46.875 kHz** | **94.8 kB/s** | 47 % | **103 %** |
 
-UART capacity: 2,000,000 baud ÷ 10 bits per byte (8N1) = **200 kB/s** usable.
+Wire rate = `fs / 512 x 1036` bytes/s (frame v2, one channel).
 
-`N = 8` with two channels is the intended saturation point of the experiment.
+## THERE ARE TWO SERIAL LINKS, AND THE SECOND IS THE TIGHTER ONE
+
+This was missed until hardware bring-up and it changes the experiment.
+
+```
+FPGA ──── link 1 ────▶ ESP32-S3 ──── link 2 ────▶ host
+       UART 2 Mbaud              UART0 921600 baud
+       = 200,000 B/s             -> CH9102 -> USB
+                                 = 92,160 B/s     <-- the real ceiling
+```
+
+Both links are ordinary 8N1 UARTs, so both cost 10 bits per byte:
+
+| link | baud | capacity |
+|------|------|----------|
+| 1. FPGA -> ESP32 (`CLK_PER_BIT` in `top.v`, `FPGA_BAUD` in the sketch) | 2,000,000 | 200,000 B/s |
+| 2. ESP32 -> host (`Serial.begin()` in the sketch, `BAUD` in the viewer) | 921,600 | **92,160 B/s** |
+
+Earlier documents quoted 200 kB/s as "the UART capacity". That is link 1 only. **The chain
+saturates at 92 kB/s**, wherever the data has to pass through both.
+
+### What this changes
+
+- **A single microphone CAN saturate the chain.** At `BCLK_DIV = 8` one channel produces
+  94.8 kB/s against a 92.2 kB/s ceiling — 103 %. No second microphone required.
+- **The failure will be `GATEWAY LOSS (ESP32/USB)`, not `LINK SATURATED (FPGA FIFO)`.**
+  The FPGA's FIFO drains happily into the 2 Mbaud link 1; the backlog forms inside the
+  ESP32, which cannot push bytes out of link 2 fast enough. `ovf` should stay at 0 while
+  `seq` gaps appear — precisely the distinction the instrumentation was built to make.
+- **Link 2 can be raised later.** Either a higher `Serial.begin()` baud, or switching the
+  ESP32-S3 to its native USB CDC (`USB CDC On Boot: Enabled`), which is not baud-limited at
+  all. Doing that moves the bottleneck back to link 1 and is itself a result worth plotting.
+
+With a second microphone the numbers double, so `BCLK_DIV = 8` two-channel would be
+189.7 kB/s — 95 % of link 1 and 206 % of link 2.
 
 ## Pinout (`fpga/src/top.cst`)
 
