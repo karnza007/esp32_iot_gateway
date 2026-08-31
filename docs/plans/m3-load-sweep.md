@@ -222,11 +222,22 @@ Every point within **0.05 %** of prediction across a 3.1× range. ~23,600 frames
 exceeds capacity — and `ovf = 0` throughout, so it is correctly attributed to the gateway
 rather than the FPGA. The knee is bracketed between 82 % and 103 % of nominal capacity.
 
-### Phase C — `BCLK_DIV = 8`, sweep link 2 baud
+### Phase C — `BCLK_DIV = 8`, sweep link 2 baud — **H4 HELD**
 
-| run | s | frames ok | lost | drop % | cksum err | ovf bytes | short | wire B/s | verdict |
-|-----|---|-----------|------|--------|-----------|-----------|-------|----------|---------|
-| | | | | | | | | | |
+| link 2 baud | demand % | drop % | cksum % | usable audio | verdict |
+|---|---|---|---|---|---|
+| 2,000,000 | 47.5 | 0.00 | 0.0 | 100 % | OK |
+| 1,500,000 | 63.4 | 0.00 | 0.0 | 100 % | OK |
+| 1,200,000 | 79.2 | 0.00 | 0.0 | 100 % | OK |
+| 1,000,000 | 95.0 | 0.00 | 0.0 | 100 % | OK |
+| 975,000 | 97.5 | 0.00 | 0.0 | 100 % | OK |
+| **950,000** | **100.0** | **0.00** | **0.0** | **100 %** | **OK** |
+| **921,600** | **103.1** | **5.50** | **26.1** | **70 %** | GATEWAY LOSS |
+| 750,000 | 126.7 | 23.45 | 100 | **0 %** | GATEWAY LOSS |
+| 460,800 | 206.2 | 55.70 | 100 | **0 %** | GATEWAY LOSS |
+
+The knee sits between **100.0 %** and **103.1 %** of nominal capacity — the link is perfect
+right up to its rating and then collapses. `ovf = 0` at all nine points.
 
 ### Hypothesis outcomes
 
@@ -235,7 +246,7 @@ rather than the FPGA. The knee is bracketed between 82 % and 103 % of nominal ca
 | H1 headroom | no loss anywhere in phase A | ☑ **HELD** — 0 loss at all 6 points, ≤0.05 % rate error |
 | H2 attribution | loss only at `BCLK_DIV=8` in phase B | ☑ **HELD** — 12 runs, one loses data, and only where demand > capacity |
 | H3 verdict | `GATEWAY LOSS (ESP32/USB)`, `ovf` = 0 | ☑ **HELD** — div8: ovf 0, verdict correct in all 59 intervals, 0 header errors |
-| H4 knee | ≈ 948,500 baud | ☐ held ☐ falsified, measured ______ |
+| H4 knee | ≈ 948,500 baud | ☑ **HELD** — clean at 950,000 (100.0 %), lossy at 921,600 (103.1 %) |
 
 ## 8. What M3 hands to M4
 

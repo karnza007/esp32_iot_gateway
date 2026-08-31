@@ -383,11 +383,13 @@ apart by a counter inside the FPGA. Everything M4 claims about SPI depends on th
 
 Two things worth noting.
 
-**Link 2 tops out at ~94.5 % of its nominal capacity, not 100 %.** 87,103 B/s against a
-nominal 92,160. The missing ~5.5 % is the gateway's own overhead — the ESP32's read/write
-loop and the CH9102's USB packetisation. **A UART's usable capacity is measurably below its
-baud rate divided by ten**, and that gap is exactly the sort of thing a datasheet will not
-tell you.
+**~~Link 2 tops out at ~94.5 % of its nominal capacity, not 100 %.~~ — WRONG, corrected by
+M3-C.** This said 87,103 B/s arrived against a nominal 92,160 and attributed the shortfall to
+gateway overhead. The metric was at fault, not the gateway: it counted only bytes inside
+recognised frames and ignored bytes discarded during resynchronisation. Counting everything
+that arrives gives **92,103 B/s — 99.9 % of nominal.** Phase C confirms this at every
+saturated point (99.8–100.0 %). **A UART delivers essentially its full rated capacity;**
+there is no hidden overhead, and the earlier claim should not be repeated.
 
 **8.3 % of bytes lost costs 30.5 % of the audio.** Loss is not proportional to damage: a
 frame with a single byte missing fails its checksum and is discarded whole. This is the same
@@ -467,3 +469,68 @@ run whose configuration disagrees with its filename.
 (`gw_sh` needs Tcl 8.6 at `/Library/Frameworks`, which macOS 26 no longer ships. The Gowin
 bundle carries its own copy, so `DYLD_FRAMEWORK_PATH` pointed at
 `GowinIDE.app/.../IDE/lib` is enough — no system modification.)
+
+---
+
+## M3-C — the knee, located from the capacity side
+
+**2026-08-31** · `BCLK_DIV = 8` fixed (demand 95,032 B/s), **link 2 swept 2,000,000 → 460,800**
+· raw: `data/m3-C-baud*.csv` · automated with `tools/sweep_baud.sh`
+
+**Hypothesis H4.** Holding demand fixed and lowering capacity will locate a knee at
+**≈ 950,320 baud**, the point where capacity equals demand.
+
+**Result — H4 HELD, and more sharply than predicted.**
+
+| link 2 baud | capacity B/s | demand as % | arriving B/s | % of capacity | frame drop | checksum errors | usable audio | verdict |
+|---|---|---|---|---|---|---|---|---|
+| 2,000,000 | 200,000 | 47.5 % | 95,050 | 47.5 % | 0.00 % | 0.0 % | **100 %** | OK |
+| 1,500,000 | 150,000 | 63.4 % | 95,045 | 63.4 % | 0.00 % | 0.0 % | **100 %** | OK |
+| 1,200,000 | 120,000 | 79.2 % | 95,048 | 79.2 % | 0.00 % | 0.0 % | **100 %** | OK |
+| 1,000,000 | 100,000 | 95.0 % | 95,074 | 95.1 % | 0.00 % | 0.0 % | **100 %** | OK |
+| 975,000 | 97,500 | 97.5 % | 95,055 | 97.5 % | 0.00 % | 0.0 % | **100 %** | OK |
+| **950,000** | **95,000** | **100.0 %** | 94,990 | 100.0 % | **0.00 %** | **0.0 %** | **100 %** | **OK** |
+| **921,600** | **92,160** | **103.1 %** | 92,103 | 99.9 % | **5.50 %** | **26.1 %** | **70 %** | GATEWAY LOSS |
+| 750,000 | 75,000 | 126.7 % | 75,023 | 100.0 % | 23.45 % | 100 % | **0 %** | GATEWAY LOSS |
+| 460,800 | 46,080 | 206.2 % | 46,001 | 99.8 % | 55.70 % | 100 % | **0 %** | GATEWAY LOSS |
+
+### The knee is at capacity, and it is a cliff
+
+**At 100.0 % of nominal capacity the link is still perfect** — 3583 frames, zero lost, zero
+corrupt. At 103.1 % it has lost 30 % of the audio. At 126.7 % it delivers **nothing usable at
+all**.
+
+| demand vs capacity | usable audio delivered |
+|---|---|
+| 100.0 % | 100 % |
+| 103.1 % | 70 % |
+| 126.7 % | 0 % |
+| 206.2 % | 0 % |
+
+**Three percent over capacity costs thirty percent of the payload. Twenty-seven percent over
+costs all of it.** Loss is nowhere near proportional to overload, because a frame missing a
+single byte fails its checksum and is discarded whole. This is the strongest argument in the
+report for provisioning headroom rather than running "close to capacity" — the useful
+capacity of the link is not 100 % of its rating, it is 100 % minus whatever margin protects
+you from ever crossing it.
+
+### A UART delivers its full rated capacity
+
+Every saturated point carried **99.8–100.0 %** of `baud ÷ 10`. There is no measurable
+gateway overhead: the ESP32 and the CH9102 keep the wire completely full and simply discard
+what will not fit. This **corrects the M3-B finding above**, which claimed a 94.5 % ceiling
+— that number came from a metric that ignored bytes skipped during resynchronisation.
+
+### Both directions agree
+
+| approach | what varied | knee located |
+|---|---|---|
+| A / B | demand, capacity fixed | between 82 % and 103 % |
+| **C** | **capacity, demand fixed** | **between 100.0 % and 103.1 %** |
+
+Phase C brackets it fifteen times more tightly, and its window sits inside phase B's. Two
+experiments varying opposite quantities, agreeing on the same boundary — which is exactly
+why the plan called for running it both ways rather than either alone.
+
+`ovf = 0` at every single point. Link 1 never exceeded 47.5 %, and the FPGA discarded nothing
+in any of the nine runs.
