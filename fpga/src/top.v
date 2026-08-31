@@ -18,7 +18,7 @@
 // the sample rate on its own instead of being edited in lockstep.
 
 module top_module #(
-    parameter integer BCLK_DIV    = 12,   // 25 -> 960 kHz BCLK -> fs = 15.000 kHz
+    parameter integer BCLK_DIV    = 8,   // 25 -> 960 kHz BCLK -> fs = 15.000 kHz
     parameter integer CLK_PER_BIT = 12,   // 12 -> 2,000,000 baud
     parameter integer NUM_CH      = 1     // channels captured per frame
 )(

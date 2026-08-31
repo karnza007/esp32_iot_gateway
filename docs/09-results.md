@@ -35,6 +35,11 @@ Wire rate for one channel: `fs / 512 × 1036` B/s.
 | `run-positive-control.csv` | 211 | 0 | 0 | 0.00 | 6175 | 1,133,450 | 6175 | 0 | 0 | LINK SATURATED (FPGA FIFO) |
 | `run-n25-null-after.csv` | 49 | 1439 | 0 | 0.00 | 0 | 0 | 0 | 30,358 | 33 | OK |
 | `m3-phase0-null-2M.csv` | 59 | 1736 | 0 | 0.00 | 0 | 0 | 0 | 30,337 | 15 | OK |
+| `m3-A-div20.csv` | 130 | 4756 | 0 | 0.00 | 0 | 0 | 0 | 37,923 | 19 | OK |
+| `m3-A-div16.csv` | 59 | 2713 | 0 | 0.00 | 0 | 0 | 0 | 47,430 | 24 | OK |
+| `m3-A-div12.csv` | 59 | 3618 | 0 | 0.00 | 0 | 0 | 0 | 63,246 | 32 | OK |
+| `m3-A-div10.csv` | 59 | 4341 | 0 | 0.00 | 0 | 0 | 0 | 75,887 | 38 | OK |
+| `m3-A-div8.csv` | 59 | 5425 | 0 | 0.00 | 0 | 0 | 0 | 94,816 | 47 | OK |
 
 ---
 
@@ -245,3 +250,74 @@ Third time this project has been caught by the same class of error: **a paramete
 in one place and assumed in another.** The others were `CLK_PER_BIT`/`FPGA_BAUD` and
 `SAMPLE_RATE` in the viewer. The fix each time is to make the data self-describing rather
 than to remember harder.
+
+---
+
+## M3-A — sample-rate sweep with both links at 2 Mbaud
+
+**2026-08-31** · `BCLK_DIV` 25 → 8, link 2 = 2,000,000 baud, one channel
+· raw: `data/m3-A-div*.csv`
+
+**Hypothesis H1.** With both links at 200,000 B/s, sweeping the sample rate over its full
+range produces **no loss at any point**, because even the maximum single-channel rate is
+only 47 % of capacity.
+
+**Result — H1 HELD. Zero loss at every point.**
+
+| `BCLK_DIV` | fs (Hz) | predicted B/s | observed B/s | error | lost | ovf | cksum | verdict |
+|---|---|---|---|---|---|---|---|---|
+| 25 | 15,000 | 30,352 | 30,337 | 0.05 % | 0 | 0 | 0 | OK |
+| 20 | 18,750 | 37,939 | 37,923 | 0.04 % | 0 | 0 | 0 | OK |
+| 16 | 23,438 | 47,424 | 47,430 | 0.01 % | 0 | 0 | 0 | OK |
+| 12 | 31,250 | 63,232 | 63,246 | 0.02 % | 0 | 0 | 0 | OK |
+| 10 | 37,500 | 75,879 | 75,887 | 0.01 % | 0 | 0 | 0 | OK |
+| 8 | 46,875 | 94,849 | 94,816 | 0.03 % | 0 | 0 | 0 | OK |
+
+**Worst error across a 3.1× range of data rates: 0.05 %.** Not one frame lost, not one byte
+of overflow, not one checksum error, across roughly 23,600 frames.
+
+This is deliberately the boring phase, and its value is exactly that: it establishes that
+the FPGA capture, the frame format and the host analysis are all correct over the full
+sample-rate range. Any loss seen in phase B is therefore attributable to the single setting
+that changes there.
+
+### The throughput independently confirms the sample rate
+
+At `BCLK_DIV = 8`: 94,816 B/s ÷ 1036 bytes per frame = 91.52 frames/s × 512 samples =
+**46,859 Hz** against a nominal 46,875 — agreement to **0.034 %**. The data rate is a direct
+measurement of the sample rate, and it confirms the clock divider without a scope.
+
+### FFT frequency resolution — not a fault
+
+A 440 Hz tone read high at `BCLK_DIV = 8`. This is expected and is a property of the
+transform, not of the link.
+
+The FFT is 512-point, so bin spacing is `fs / 512`:
+
+| fs (Hz) | bin spacing | nearest bin to 440 Hz | error |
+|---|---|---|---|
+| 15,000 | 29.30 Hz | 439.45 | −0.5 |
+| 23,438 | 45.78 Hz | 457.76 | +17.8 |
+| 31,250 | 61.04 Hz | 427.25 | −12.8 |
+| 37,500 | 73.24 Hz | 439.45 | −0.5 |
+| **46,875** | **91.55 Hz** | **457.76** | **+17.8** |
+
+Raising the sample rate spreads the same 512 bins over a wider frequency range, so each bin
+covers more hertz. At 46,875 Hz a peak can only be reported in 91.6 Hz steps — 440 Hz has
+nowhere to land but the 457.8 Hz bin.
+
+**Fixed by interpolating between bins.** A parabola fitted through the peak bin and its two
+neighbours (on log magnitude) recovers the true frequency to a fraction of a bin:
+
+| fs (Hz) | bin peak | interpolated | error |
+|---|---|---|---|
+| 15,000 | 439.45 | 440.04 | +0.04 |
+| 23,438 | 457.76 | 439.41 | −0.59 |
+| 31,250 | 427.25 | 440.86 | +0.86 |
+| 37,500 | 439.45 | 440.04 | +0.04 |
+| 46,875 | 457.76 | **438.76** | **−1.24** |
+
+A 17.8 Hz quantisation error becomes 1.2 Hz. This matters beyond cosmetics: the SNR and THD
+measurements planned for the fidelity work need the peak located accurately, not merely
+quantised to the nearest bin. The title now reports the interpolated frequency, the raw bin,
+and the resolution, so the distinction is visible rather than hidden.

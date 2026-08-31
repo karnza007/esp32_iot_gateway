@@ -96,6 +96,26 @@ def channels_from_cfg(cfg: int) -> int:
     return (cfg >> 8) & 0x3
 
 
+def interpolate_peak(mag, k: int) -> float:
+    """Sub-bin peak position by parabolic interpolation on log magnitude.
+
+    An FFT of 512 points at 46,875 Hz has bins 91.6 Hz apart, so a 440 Hz tone can
+    only land on the 457.8 Hz bin — a 4 % error that is resolution, not a fault.
+    Fitting a parabola through the peak bin and its two neighbours recovers the true
+    frequency to a fraction of a bin, which matters because the SNR/THD work later
+    needs the peak located accurately, not merely quantised.
+
+    Returns a fractional bin index offset in [-0.5, +0.5].
+    """
+    if k <= 0 or k >= len(mag) - 1:
+        return 0.0
+    a, b, c = (float(np.log(max(mag[i], 1e-12))) for i in (k - 1, k, k + 1))
+    denom = a - 2.0 * b + c
+    if denom == 0.0:
+        return 0.0
+    return float(np.clip(0.5 * (a - c) / denom, -0.5, 0.5))
+
+
 def plausible_cfg(cfg: int) -> bool:
     """Does this cfg word look like one our FPGA could have sent?
 
@@ -483,6 +503,8 @@ def main() -> int:
     offered = fs * 2 * max(nch, 1)
     frame_rate = fs / FRAME_SAMPLES
     print(f"cfg=0x{cfg:04X}  BCLK_DIV={cfg & 0xFF}  channels={nch}  fs={fs:.4f} Hz")
+    print(f"FFT: {FRAME_SAMPLES}-point, bin spacing {fs/FRAME_SAMPLES:.2f} Hz "
+          f"(a peak is interpolated between bins)")
     print(f"expect {frame_rate:.2f} frames/s  "
           f"payload {frame_rate*PAYLOAD_BYTES/1000:.2f} kB/s  "
           f"wire {frame_rate*FRAME_BYTES/1000:.2f} kB/s "
@@ -540,6 +562,7 @@ def main() -> int:
 
     t_axis = np.arange(FRAME_SAMPLES)
     freqs = np.fft.rfftfreq(FRAME_SAMPLES, d=1.0 / fs)
+    bin_hz = fs / FRAME_SAMPLES
     window = np.hanning(FRAME_SAMPLES)
     window_gain = window.sum()
 
@@ -606,8 +629,11 @@ def main() -> int:
         fft_line.set_ydata(magnitude)
         if magnitude.size > 1:
             k = int(np.argmax(magnitude[1:]) + 1)
+            delta = interpolate_peak(magnitude, k)
+            f_true = (k + delta) * fs / FRAME_SAMPLES
             peak_marker.set_data([float(freqs[k])], [float(magnitude[k])])
-            ax_fft.set_title(f"FFT — peak {freqs[k]:.1f} Hz")
+            ax_fft.set_title(f"FFT — peak {f_true:.1f} Hz "
+                             f"(bin {freqs[k]:.1f}, resolution {bin_hz:.1f} Hz)")
         return wave_line, fft_line, peak_marker, status
 
     anim = animation.FuncAnimation(fig, update, interval=33, blit=False,

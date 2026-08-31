@@ -194,11 +194,18 @@ mistake here would silently mislabel a data point.
 The CH9102 sustains 2 Mbaud cleanly — 1736/1736 frames intact over 59 s. H4's early
 falsifier did **not** fire: the bridge delivers its nominal rate.
 
-### Phase A — sweep `BCLK_DIV`, link 2 = 2 Mbaud
+### Phase A — sweep `BCLK_DIV`, link 2 = 2 Mbaud — **H1 HELD, zero loss everywhere**
 
 | run | s | frames ok | lost | drop % | cksum err | ovf bytes | short | wire B/s | verdict |
 |-----|---|-----------|------|--------|-----------|-----------|-------|----------|---------|
-| | | | | | | | | | |
+| `m3-A-div25` (= phase 0) | 59 | 1736 | 0 | 0.00 | 0 | 0 | 0 | 30,337 | OK |
+| `m3-A-div20.csv` | 130 | 4756 | 0 | 0.00 | 0 | 0 | 0 | 37,923 | OK |
+| `m3-A-div16.csv` | 59 | 2713 | 0 | 0.00 | 0 | 0 | 0 | 47,430 | OK |
+| `m3-A-div12.csv` | 59 | 3618 | 0 | 0.00 | 0 | 0 | 0 | 63,246 | OK |
+| `m3-A-div10.csv` | 59 | 4341 | 0 | 0.00 | 0 | 0 | 0 | 75,887 | OK |
+| `m3-A-div8.csv` | 59 | 5425 | 0 | 0.00 | 0 | 0 | 0 | 94,816 | OK |
+
+Every point within **0.05 %** of prediction across a 3.1× range. ~23,600 frames, zero lost.
 
 ### Phase B — sweep `BCLK_DIV`, link 2 = 921,600
 
@@ -216,7 +223,7 @@ falsifier did **not** fire: the bridge delivers its nominal rate.
 
 | | prediction | outcome |
 |---|---|---|
-| H1 headroom | no loss anywhere in phase A | ☐ held ☐ falsified |
+| H1 headroom | no loss anywhere in phase A | ☑ **HELD** — 0 loss at all 6 points, ≤0.05 % rate error |
 | H2 attribution | loss only at `BCLK_DIV=8` in phase B | ☐ held ☐ falsified |
 | H3 verdict | `GATEWAY LOSS (ESP32/USB)`, `ovf` = 0 | ☐ held ☐ falsified |
 | H4 knee | ≈ 948,500 baud | ☐ held ☐ falsified, measured ______ |
