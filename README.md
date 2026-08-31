@@ -130,6 +130,7 @@ Details in [`docs/04-roadmap.md`](docs/04-roadmap.md).
 
 ## Documentation
 
+- [`docs/00-glossary.md`](docs/00-glossary.md) — **every term used in this project, explained.**
 - [`docs/01-requirements.md`](docs/01-requirements.md) — what the system must do.
 - [`docs/02-hardware.md`](docs/02-hardware.md) — boards, pinout, wiring, part limits.
 - [`docs/03-protocol.md`](docs/03-protocol.md) — on-wire frame format.
