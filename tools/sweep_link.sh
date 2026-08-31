@@ -106,7 +106,12 @@ elif [ "$PHASE" = "D2" ]; then
         "$PY" host/inmp441_viewer.py --no-plot --seconds "$SECS" --baud "$B2" \
               --csv "$CSV" >/tmp/run.log 2>&1
         if [ ! -s "$CSV" ]; then
-            echo "  NO FRAMES AT ALL -> link 2 unusable at ${B2} baud"; continue
+            # Distinguish "the bridge refused this rate" from "the bits are mangled":
+            # a raw probe reports the byte rate even when nothing decodes.
+            RAW=$("$PY" tools/probe_port.py --seconds 4 --baud "$B2" 2>/dev/null \
+                  | grep -E 'bytes received' | sed -E 's/.*-> *//')
+            echo "  NO FRAMES  (raw byte rate at ${B2}: ${RAW:-none})  ->  link 2 FAILS"
+            continue
         fi
         "$PY" - "$CSV" "$B2" <<'PYE'
 import csv, sys

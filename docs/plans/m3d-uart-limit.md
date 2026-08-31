@@ -175,8 +175,9 @@ at the host**. Every error is then attributable to link 1.
 | 4,000,000 | 4045 | 0 | 0 | **0.000 %** | CLEAN |
 | 6,000,000 | 4048 | 0 | 0 | **0.000 %** | CLEAN |
 | **8,000,000** | **8184 + 8184** | **0** | **0** | **0.000 %** | **CLEAN (two 90 s runs)** |
+| **12,000,000** | **4044** | **0** | **0** | **0.000 %** | **CLEAN** (`CLK_PER_BIT = 2`) |
 
-**Link 1 is clean at every rate tested, up to 8,000,000 baud** — 800,000 B/s, four times the
+**Link 1 is clean at every rate tested, up to 12,000,000 baud** — 800,000 B/s, four times the
 rate used throughout M3, with **zero errors in 16,368 frames** across two independent 90-second
 runs.
 
@@ -208,8 +209,49 @@ link 2.
 921,600 baud — a value inherited from M1 and never measured. It runs cleanly at **6,000,000
 baud, 6.5 times faster**, delivering 600,000 B/s with zero errors.
 
-**Highest rate tested: 6,000,000 baud. No failure was observed, so this is a lower bound on
-link 2's capability, not its ceiling.**
+### The ceiling, bracketed
+
+| `HOST_BAUD` | result | raw bytes arriving |
+|---|---|---|
+| 6,000,000 | **CLEAN** — 2667 frames, 0 errors | full rate |
+| 6,500,000 | FAILS | **none** |
+| 7,000,000 | FAILS | **none** |
+| 7,500,000 | FAILS | **none** |
+| 8,000,000 | FAILS | **none** |
+
+**Zero bytes, not corrupted bytes.** That is a refusal, not signal degradation — so the
+failure is not electrical.
+
+### Which side refuses: a decisive test
+
+With the ESP32 set to transmit at 6,500,000, the host was probed at several rates. If the
+ESP32 were not transmitting, every probe would read zero. If it *is* transmitting, a
+mismatched host rate must produce **garbage bytes, not silence**:
+
+| host probe rate | bytes received |
+|---|---|
+| 6,500,000 | **0 B/s** |
+| 6,000,000 | 47,853 B/s (garbage) |
+| 4,000,000 | 46,885 B/s (garbage) |
+| 2,000,000 | 22,386 B/s (garbage) |
+
+**The ESP32 is transmitting perfectly well at 6.5 Mbaud.** The data is there. And asking
+pyserial to open the port at that rate:
+
+```
+requested  6,000,000  ->  port reports 6,000,000   OK
+requested  6,500,000  ->  REJECTED: OSError: [Errno 22] Invalid argument
+requested  7,000,000  ->  REJECTED: OSError: [Errno 22] Invalid argument
+requested  8,000,000  ->  REJECTED: OSError: [Errno 22] Invalid argument
+requested 12,000,000  ->  REJECTED: OSError: [Errno 22] Invalid argument
+```
+
+**The limit is the macOS CH9102 driver, and it is exactly 6,000,000 baud.** The port cannot
+be opened above it — this is a host software cap, not the bridge's electrical limit and not
+the ESP32's. It coincides exactly with the CH9102's datasheet maximum of 6 Mbaud, so the
+driver appears to enforce the spec rather than discover it.
+
+**Highest usable link 2 rate: 6,000,000 baud = 600,000 B/s.**
 
 ### D3 — two channels
 
@@ -222,16 +264,16 @@ link 2's capability, not its ceiling.**
 | | prediction | outcome |
 |---|---|---|
 | H5 | link 1 works at 4 Mbaud | ☑ **HELD** — 0.000 % corrupt over 4045 frames |
-| H6 | link 1 fails below 8 Mbaud | ☒ **FALSIFIED** — clean at 8 Mbaud, 16,368 frames, no ceiling found |
-| H7 | link 2 exceeds 2 Mbaud | ☑ **HELD** — clean at 6 Mbaud, 6.5× the assumed limit |
+| H6 | link 1 fails below 8 Mbaud | ☒ **FALSIFIED** — clean at 12 Mbaud, the fastest a 24 MHz clock can produce. No ceiling found: link 1 is untestable further, not unbroken further. |
+| H7 | link 2 exceeds 2 Mbaud | ☑ **HELD** — usable to 6 Mbaud, 6.5× the assumed limit; capped there by the macOS driver |
 | H8 | 2 mics cannot saturate the improved chain | **very likely** — two mics are 24–32 % of the measured links |
 
 ### What D1 and D2 together mean
 
 | | assumed for all of M3 | measured in M3-D | factor |
 |---|---|---|---|
-| link 1 | 2,000,000 baud | **≥ 8,000,000** | **4×** |
-| link 2 | 921,600 baud | **≥ 6,000,000** | **6.5×** |
+| link 1 | 2,000,000 baud | **≥ 12,000,000** (no failure found) | **6×** |
+| link 2 | 921,600 baud | **6,000,000** (host driver cap) | **6.5×** |
 
 Every M3 result was taken on a chain running at roughly a quarter to a sixth of what the
 hardware will actually do. The knee measured in M3-C is real and correctly located — but it
@@ -242,8 +284,12 @@ is the knee of a link that was **needlessly slow**, not of UART as a technology.
 
 | against | load |
 |---|---|
-| link 1 at 8 Mbaud (800,000 B/s) | **23.8 %** |
+| link 1 at 12 Mbaud (1,200,000 B/s) | **15.8 %** |
 | link 2 at 6 Mbaud (600,000 B/s) | **31.7 %** |
+
+**The end-to-end UART ceiling for this system is 600,000 B/s**, set by the host's serial
+driver rather than by any part of the hardware under study. That is the number the SPI
+comparison must be measured against.
 
 Saturating link 2 would need **6.4 channels** of 16-bit audio at 46,875 Hz — about **seven
 INMP441s**. This project has two.

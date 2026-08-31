@@ -17,8 +17,8 @@
 // ---------------------------------------------------------------- configuration
 constexpr int      FPGA_RX_PIN = 18;        // ESP32-S3 GPIO <- FPGA UART TX (pin 42)
 constexpr int      FPGA_TX_PIN = 17;        // unused (no data back to the FPGA)
-constexpr uint32_t FPGA_BAUD   = 6000000;   // link 1: must match 24 MHz / CLK_PER_BIT in top.v
-constexpr uint32_t HOST_BAUD   = 6000000;   // link 2: must match --baud in inmp441_viewer.py
+constexpr uint32_t FPGA_BAUD   = 2000000;   // link 1: must match 24 MHz / CLK_PER_BIT in top.v
+constexpr uint32_t HOST_BAUD   = 2000000;   // link 2: must match --baud in inmp441_viewer.py
 
 // 0 = pump (normal operation), 1 = diagnostic.
 //
