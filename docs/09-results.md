@@ -40,6 +40,7 @@ Wire rate for one channel: `fs / 512 × 1036` B/s.
 | `m3-A-div12.csv` | 59 | 3618 | 0 | 0.00 | 0 | 0 | 0 | 63,246 | 32 | OK |
 | `m3-A-div10.csv` | 59 | 4341 | 0 | 0.00 | 0 | 0 | 0 | 75,887 | 38 | OK |
 | `m3-A-div8.csv` | 59 | 5425 | 0 | 0.00 | 0 | 0 | 0 | 94,816 | 47 | OK |
+| `m3-B-div8.csv` | 59 | 3772 | 319 | 5.88 | 1335 | **0** | 1016 | 66,082 | 72 | **GATEWAY LOSS (ESP32/USB)** |
 
 ---
 
@@ -321,3 +322,77 @@ A 17.8 Hz quantisation error becomes 1.2 Hz. This matters beyond cosmetics: the 
 measurements planned for the fidelity work need the peak located accurately, not merely
 quantised to the nearest bin. The title now reports the interpolated frequency, the raw bin,
 and the resolution, so the distinction is visible rather than hidden.
+
+---
+
+## M3-B-div8 — the failure is attributed to the gateway
+
+**2026-08-31** · `BCLK_DIV = 8` (46,875 Hz), **link 2 = 921,600 baud**, frame v3
+· raw: `data/m3-B-div8.csv`
+
+**Hypothesis H3.** At `BCLK_DIV = 8` the FPGA offers 95,032 B/s. Link 2 can carry 92,160
+B/s, so data must be lost — but link 1 carries 200,000 B/s and is only 47.5 % loaded, so the
+**FPGA's FIFO should never fill**. The loss must therefore be reported as
+`GATEWAY LOSS (ESP32/USB)` with `ovf = 0`, not as `LINK SATURATED (FPGA FIFO)`.
+
+*Falsifier: `ovf` climbs.*
+
+**Result — H3 HELD.**
+
+```
+  duration           59 s (59 one-second intervals)
+  frames received    5107  (of 5426 expected)
+  frames intact      3772
+  frames lost        319  -> drop rate 5.88 %
+  checksum errors    1335 -> 26.14 % of received
+  header errors      0
+  FPGA overflow      0 bytes          <-- the FPGA discarded nothing
+  short frames       1016  (130,702 payload bytes missing)
+  bytes on the wire  87,103 B/s
+  delivered payload  65,191 B/s
+  verdict            GATEWAY LOSS (ESP32/USB)   in all 59 intervals
+```
+
+### Why this is the most important run so far
+
+**The instrument can now discriminate in both directions.** Until now it had only ever been
+demonstrated one way:
+
+| condition | run | `ovf` | verdict | proven? |
+|-----------|-----|-------|---------|---------|
+| healthy | `run-n25-null` | 0 | `OK` | ✅ |
+| FPGA-side loss | `run-positive-control` | 1,133,450 | `LINK SATURATED (FPGA FIFO)` | ✅ |
+| **gateway-side loss** | **`m3-B-div8`** | **0** | **`GATEWAY LOSS (ESP32/USB)`** | ✅ **now** |
+
+Two failure modes that look identical from the outside — audio with holes in it — are told
+apart by a counter inside the FPGA. Everything M4 claims about SPI depends on this working.
+
+### Where the data went
+
+| | B/s | share |
+|---|---|---|
+| offered by the FPGA | 95,032 | 103.1 % of link 2 |
+| arrived at the host | 87,103 | 94.5 % of link 2 |
+| **never arrived** | **7,929** | **8.3 % of what was sent** |
+| usable audio recovered | 66,082 | **69.5 % of what was sent** |
+
+Two things worth noting.
+
+**Link 2 tops out at ~94.5 % of its nominal capacity, not 100 %.** 87,103 B/s against a
+nominal 92,160. The missing ~5.5 % is the gateway's own overhead — the ESP32's read/write
+loop and the CH9102's USB packetisation. **A UART's usable capacity is measurably below its
+baud rate divided by ten**, and that gap is exactly the sort of thing a datasheet will not
+tell you.
+
+**8.3 % of bytes lost costs 30.5 % of the audio.** Loss is not proportional to damage: a
+frame with a single byte missing fails its checksum and is discarded whole. This is the same
+collapse seen in M2-PC, in gentler form, and it is the strongest argument in the report for
+why headroom matters rather than merely running "close to capacity".
+
+### A note on comparing with the earlier v2 attempt
+
+An earlier run of this same point (`m3-B-div8.v2-INVALID.csv.bak`) reported
+`LINK SATURATED (FPGA FIFO)` and a phantom 65,536-byte overflow. Both were instrument
+faults, now fixed (frame v3 + corrected verdict logic). The v3 run reports **0 header
+errors**, so no header corruption went undetected this time — the numbers above can be
+trusted in a way the earlier ones could not.

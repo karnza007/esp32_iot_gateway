@@ -211,7 +211,10 @@ Every point within **0.05 %** of prediction across a 3.1× range. ~23,600 frames
 
 | run | s | frames ok | lost | drop % | cksum err | ovf bytes | short | wire B/s | verdict |
 |-----|---|-----------|------|--------|-----------|-----------|-------|----------|---------|
-| | | | | | | | | | |
+| `m3-B-div8.csv` | 59 | 3772 | 319 | 5.88 | 1335 | **0** | 1016 | 66,082 | **GATEWAY LOSS (ESP32/USB)** |
+
+**H3 held.** `ovf = 0` throughout: the FPGA discarded nothing, and the loss is correctly
+attributed to the gateway. Remaining points div25/20/16/12/10 predicted clean.
 
 ### Phase C — `BCLK_DIV = 8`, sweep link 2 baud
 
@@ -225,7 +228,7 @@ Every point within **0.05 %** of prediction across a 3.1× range. ~23,600 frames
 |---|---|---|
 | H1 headroom | no loss anywhere in phase A | ☑ **HELD** — 0 loss at all 6 points, ≤0.05 % rate error |
 | H2 attribution | loss only at `BCLK_DIV=8` in phase B | ☐ held ☐ falsified |
-| H3 verdict | `GATEWAY LOSS (ESP32/USB)`, `ovf` = 0 | ☐ held ☐ falsified |
+| H3 verdict | `GATEWAY LOSS (ESP32/USB)`, `ovf` = 0 | ☑ **HELD** — div8: ovf 0, verdict correct in all 59 intervals, 0 header errors |
 | H4 knee | ≈ 948,500 baud | ☐ held ☐ falsified, measured ______ |
 
 ## 8. What M3 hands to M4
