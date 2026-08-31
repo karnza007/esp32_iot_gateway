@@ -12,17 +12,24 @@
 //                                   so `Serial` = UART0 (the wchusbserial port).
 //   Upload Speed:     921600
 // Wiring: FPGA pin 42 -> ESP32 GPIO18, and a common GND between the two boards.
+//
+// TWO LINKS, TWO BAUD RATES, EACH SET IN TWO PLACES:
+//   link 1  FPGA -> ESP32 :  FPGA_BAUD here  ==  24 MHz / CLK_PER_BIT in top.v
+//   link 2  ESP32 -> host :  HOST_BAUD here  ==  --baud in inmp441_viewer.py
+// A mismatch on either link makes every byte unreadable and looks exactly like a
+// dead wire. Change both ends together, and remember editing is not uploading.
 
 #include <Arduino.h>
 
 constexpr int      FPGA_RX_PIN = 18;        // ESP32-S3 GPIO <- FPGA UART TX (pin 42)
 constexpr int      FPGA_TX_PIN = 17;        // unused (no data back to the FPGA)
-constexpr uint32_t FPGA_BAUD   = 2000000;   // must match uart_tx (24 MHz / CLK_PER_BIT)
+constexpr uint32_t FPGA_BAUD   = 2000000;   // link 1: must match 24 MHz / CLK_PER_BIT in top.v
+constexpr uint32_t HOST_BAUD   = 2000000;   // link 2: must match --baud in inmp441_viewer.py
 
 static uint8_t buf[1024];
 
 void setup() {
-  Serial.begin(921600);                     // UART0 -> CH9102 -> host (must match viewer BAUD)
+  Serial.begin(HOST_BAUD);                  // UART0 -> CH9102 -> host
   Serial1.begin(FPGA_BAUD, SERIAL_8N1, FPGA_RX_PIN, FPGA_TX_PIN);
 }
 

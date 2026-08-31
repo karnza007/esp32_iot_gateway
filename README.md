@@ -141,6 +141,7 @@ Details in [`docs/04-roadmap.md`](docs/04-roadmap.md).
 - [`docs/07-bringup.md`](docs/07-bringup.md) — **how to program the board and run the null test**.
 - [`docs/08-troubleshooting.md`](docs/08-troubleshooting.md) — problems hit and fixes.
 - [`docs/09-results.md`](docs/09-results.md) — **every hardware run that produced a number.**
+- [`docs/plans/m3-load-sweep.md`](docs/plans/m3-load-sweep.md) — **the load sweep: hypotheses, predictions, procedure.**
 - [`docs/plans/`](docs/plans/) — implementation and experiment plans (idea, hypothesis,
   method, predictions, results).
 - [`docs/reports/`](docs/reports/) — weekly progress reports, with a template.

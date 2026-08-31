@@ -40,7 +40,9 @@ import numpy as np
 import serial
 
 # ---------------------------------------------------------------- constants
-BAUD = 921600                  # ESP32 UART0 -> CH9102 -> host
+BAUD = 2_000_000               # link 2: ESP32 UART0 -> CH9102 -> host.
+                               # MUST match HOST_BAUD in the ESP32 sketch.
+                               # Override per-run with --baud.
 SYNC = b"\xAA\x55\xA5\x5A"
 FRAME_SAMPLES = 512
 HEADER_BYTES = 10              # sync(4) + seq(2) + ovf(2) + cfg(2)
@@ -50,7 +52,7 @@ FRAME_BYTES = HEADER_BYTES + PAYLOAD_BYTES + TRAILER_BYTES   # 1036
 BODY_BYTES = FRAME_BYTES - len(SYNC)                         # read after sync
 
 LINK1_BPS = 200_000            # FPGA -> ESP32 @ 2 Mbaud
-LINK2_BPS = 92_160             # ESP32 -> host  @ 921600 — the chain's real ceiling
+LINK2_BPS = BAUD // 10         # ESP32 -> host, 8N1 = 10 bits per byte
 FPGA_CLK_HZ = 24_000_000
 BCLK_PER_FRAME = 64
 FFT_YMAX_DEFAULT = 5000        # fixed magnitude axis; no auto-scaling
@@ -422,6 +424,9 @@ def main() -> int:
                     help="serial port (default: first usbmodem/wchusbserial)")
     ap.add_argument("--csv", default=None,
                     help="append per-second statistics to this CSV file")
+    ap.add_argument("--baud", type=int, default=BAUD,
+                    help=f"link 2 baud; must match HOST_BAUD in the sketch "
+                         f"(default {BAUD})")
     ap.add_argument("--fft-ymax", type=float, default=FFT_YMAX_DEFAULT,
                     help=f"fixed FFT magnitude limit (default {FFT_YMAX_DEFAULT})")
     ap.add_argument("--no-plot", action="store_true",
@@ -436,12 +441,14 @@ def main() -> int:
         return 1
 
     try:
-        reader = FrameReader(port)
+        reader = FrameReader(port, args.baud)
     except serial.SerialException as e:
         print(f"Could not open {port}: {e}", file=sys.stderr)
         return 1
 
-    print(f"Reading {port} — waiting for the first valid frame…")
+    link2 = args.baud // 10
+    print(f"Reading {port} @ {args.baud} baud (link 2 = {link2:,} B/s) — "
+          "waiting for the first frame…")
     reader.start()
     if not reader.wait_first(10.0):
         if reader.frames_seen_any:
@@ -471,7 +478,8 @@ def main() -> int:
     print(f"expect {frame_rate:.2f} frames/s  "
           f"payload {frame_rate*PAYLOAD_BYTES/1000:.2f} kB/s  "
           f"wire {frame_rate*FRAME_BYTES/1000:.2f} kB/s "
-          f"({100*frame_rate*FRAME_BYTES/200000:.1f}% of the 2 Mbaud UART)")
+          f"({100*frame_rate*FRAME_BYTES/LINK1_BPS:.1f}% of link 1, "
+          f"{100*frame_rate*FRAME_BYTES/link2:.1f}% of link 2)")
 
     csv_writer = None
     csv_file = None
@@ -563,7 +571,7 @@ def main() -> int:
                 f"cksum err {iv.checksum_errors:d}   "
                 f"short {iv.frames_short:d} ({iv.bytes_missing:d} B)\n"
                 f"wire {iv.wire_throughput/1000:.1f} kB/s "
-                f"({100*iv.wire_throughput/LINK2_BPS:.0f}% of the 92.2 kB/s ceiling)"
+                f"({100*iv.wire_throughput/link2:.0f}% of link 2)"
             )
         status.set_text(status_text[0])
 
