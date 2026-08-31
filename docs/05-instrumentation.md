@@ -1,6 +1,6 @@
 # 05 — Instrumentation: measuring how much data the link loses, and where
 
-**Status:** implemented, simulated, not yet run on hardware
+**Status:** implemented and simulated; null test PASSED on hardware 2026-08-31
 **Milestone:** M2
 **Files:** `fpga/src/framer.v`, `fpga/src/i2s_master_rx.v`, `fpga/src/uart_tx.v`,
 `fpga/src/top.v`, `fpga/sim/tb_framer.v`, `fpga/sim/tb_chain.v`,
@@ -122,7 +122,8 @@ a 37-minute cycle, far longer than any loss burst we could confuse it with.
 
 Inside the FPGA, every time a byte is pushed into a buffer that is already full, that byte
 is dropped **and a counter goes up by one**. The counter is cumulative and never resets, so
-the host just watches it climb.
+the host just watches it climb. It wraps at 65536; the host rebuilds the true total by
+summing modulo-65536 differences, so the wrap is invisible.
 
 This is the field that answers *"whose fault is it?"*:
 
@@ -248,11 +249,19 @@ end
 
 Three deliberate choices:
 
-- **Saturating, not wrapping.** A pegged `0xFFFF` unambiguously means "massively
-  overflowing". A wrapping counter could roll back to a small, innocent-looking number and
-  make a catastrophic run look mild.
-- **Sticky, never cleared.** The host plots the delta between frames. A counter the host
-  could reset would create a race over who owns the value.
+- **Wrapping, not saturating.** The host rebuilds the true total by summing modulo-65536
+  differences between consecutive frames, which stays exact for as long as fewer than 65536
+  bytes are dropped between two *received* frames — about 1.9 MB/s of loss at 29 frames/s,
+  an order of magnitude beyond what a 200 kB/s link can even offer.
+
+  A saturating counter was implemented first and was **wrong**. Once pegged at `0xFFFF` its
+  per-interval delta reads zero, so a host watching deltas would conclude the FPGA had
+  stopped overflowing at the exact moment it was overflowing hardest — and the verdict
+  would flip from `LINK SATURATED (FPGA FIFO)` to `GATEWAY LOSS (ESP32/USB)`, blaming the
+  wrong component. At the rates planned for M3 the counter would peg within seconds, so
+  this was not a theoretical concern.
+- **Never cleared by the host.** A counter the host could reset would create a race over
+  who owns the value.
 - **Counts bytes, not events.** Bytes are what the throughput budget is denominated in, so
   the number is directly comparable to the data rate.
 

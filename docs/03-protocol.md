@@ -27,7 +27,7 @@ Implemented in `fpga/src/framer.v`; parsed by `host/inmp441_viewer.py`.
 |--------|------|-------|---------|
 | 0 | 4 | `sync` | `AA 55 A5 5A`, unchanged |
 | 4 | 2 | `seq` | frame counter, uint16 LE, free-running and wrapping |
-| 6 | 2 | `ovf` | cumulative FIFO overflow byte count, uint16 LE, saturating |
+| 6 | 2 | `ovf` | cumulative FIFO overflow byte count, uint16 LE, free-running (wraps) |
 | 8 | 2 | `cfg` | `[7:0]` = `N` divider, `[9:8]` = channel count, `[15:10]` reserved |
 | 10 | 1024 | `payload` | 512 × int16 LE audio samples |
 | 1034 | 2 | `checksum` | 16-bit additive sum of the payload bytes, LE |

@@ -54,9 +54,29 @@ BCLK_PER_FRAME = 64
 FFT_YMAX_DEFAULT = 5000        # fixed magnitude axis; no auto-scaling
 
 
+# Port-name families, most-likely-ESP32 first. The Tang Nano 4K's own FT2232
+# debugger also enumerates as /dev/cu.usbserial-* (two of them: JTAG + UART), so
+# that family is tried last and never silently preferred over a real gateway port.
+PORT_GLOBS = ("/dev/cu.wchusbserial*", "/dev/cu.usbmodem*", "/dev/cu.usbserial*")
+
+
+def list_ports() -> list[str]:
+    seen: list[str] = []
+    for pat in PORT_GLOBS:
+        for p in sorted(glob.glob(pat)):
+            if p not in seen:
+                seen.append(p)
+    return seen
+
+
 def autodetect_port() -> str | None:
-    cands = sorted(glob.glob("/dev/cu.usbmodem*")) + sorted(glob.glob("/dev/cu.wchusbserial*"))
-    return cands[0] if cands else None
+    cands = list_ports()
+    if not cands:
+        return None
+    if len(cands) > 1:
+        print(f"Multiple serial ports found: {', '.join(cands)}")
+        print(f"Using {cands[0]}. Pass one explicitly if that is wrong.")
+    return cands[0]
 
 
 def sample_rate_from_cfg(cfg: int) -> float:
@@ -80,8 +100,10 @@ class LinkStats:
     frames_expected: int = 0        # ok + inferred-lost, from seq gaps
     frames_lost: int = 0
     checksum_errors: int = 0
-    resyncs: int = 0
-    payload_bytes: int = 0
+    resync_events: int = 0          # times the stream had to be re-found
+    bytes_skipped: int = 0          # garbage bytes discarded while re-finding it
+    payload_bytes: int = 0          # audio bytes delivered
+    wire_bytes: int = 0             # payload + framing, i.e. what the link carried
     ovf_delta: int = 0
     ovf_total: int = 0
     t_start: float = field(default_factory=time.monotonic)
@@ -91,8 +113,10 @@ class LinkStats:
         self.frames_expected = 0
         self.frames_lost = 0
         self.checksum_errors = 0
-        self.resyncs = 0
+        self.resync_events = 0
+        self.bytes_skipped = 0
         self.payload_bytes = 0
+        self.wire_bytes = 0
         self.ovf_delta = 0
         self.t_start = time.monotonic()
 
@@ -106,7 +130,14 @@ class LinkStats:
 
     @property
     def throughput(self) -> float:
+        """Audio bytes per second — the useful data actually delivered."""
         return self.payload_bytes / self.elapsed
+
+    @property
+    def wire_throughput(self) -> float:
+        """Bytes per second on the wire, including sync/header/checksum.
+        This is the number to compare against the link's 200 kB/s capacity."""
+        return self.wire_bytes / self.elapsed
 
     def verdict(self) -> str:
         """Attribute the loss to a stage. This is the headline result."""
@@ -136,6 +167,7 @@ class FrameReader:
         self.total = LinkStats()
         self._last_seq: int | None = None
         self._last_ovf: int | None = None
+        self._ovf_accum: int = 0        # our own total; the wire field wraps at 65536
 
     # -- lifecycle ---------------------------------------------------------
     def start(self) -> None:
@@ -165,21 +197,28 @@ class FrameReader:
         with self._lock:
             iv = LinkStats(**{k: getattr(self.stats, k) for k in
                               ("frames_ok", "frames_expected", "frames_lost",
-                               "checksum_errors", "resyncs", "payload_bytes",
-                               "ovf_delta", "ovf_total")})
+                               "checksum_errors", "resync_events", "bytes_skipped",
+                               "payload_bytes", "wire_bytes", "ovf_delta", "ovf_total")})
             iv.t_start = self.stats.t_start
             self.stats.reset_interval()
             tot = LinkStats(**{k: getattr(self.total, k) for k in
                                ("frames_ok", "frames_expected", "frames_lost",
-                                "checksum_errors", "resyncs", "payload_bytes",
-                                "ovf_delta", "ovf_total")})
+                                "checksum_errors", "resync_events", "bytes_skipped",
+                                "payload_bytes", "wire_bytes", "ovf_delta", "ovf_total")})
             tot.t_start = self.total.t_start
         return iv, tot
 
     # -- internals ---------------------------------------------------------
-    def _resync(self) -> bool:
-        """Byte-at-a-time scan until the 4-byte sync matches."""
+    def _resync(self) -> int:
+        """Scan byte-at-a-time until the 4-byte sync matches.
+
+        Returns the number of bytes discarded before the match, or -1 if stopped.
+        In a healthy stream the sync sits immediately after the previous frame, so
+        this returns 0 every time; any non-zero value means bytes were lost or
+        corrupted and the stream had to be re-found.
+        """
         matched = 0
+        skipped = 0
         while not self._stop.is_set():
             b = self.ser.read(1)
             if not b:
@@ -187,10 +226,11 @@ class FrameReader:
             if b[0] == SYNC[matched]:
                 matched += 1
                 if matched == len(SYNC):
-                    return True
+                    return skipped
             else:
+                skipped += matched + 1
                 matched = 1 if b[0] == SYNC[0] else 0
-        return False
+        return -1
 
     def _account(self, seq: int, ovf: int, good: bool) -> None:
         """Update loss/integrity counters for one received frame."""
@@ -199,6 +239,7 @@ class FrameReader:
                 if good:
                     s.frames_ok += 1
                     s.payload_bytes += PAYLOAD_BYTES
+                    s.wire_bytes += FRAME_BYTES
                 else:
                     s.checksum_errors += 1
 
@@ -215,24 +256,31 @@ class FrameReader:
                 s.frames_expected += 1
             self._last_seq = seq
 
-            # FPGA-side overflow: sticky and monotonic, so we report the delta
-            if self._last_ovf is not None:
-                d = (ovf - self._last_ovf) & 0xFFFF
-                if 0 < d < 30000:
-                    for s in (self.stats, self.total):
-                        s.ovf_delta += d
+            # FPGA-side overflow. The wire field is free-running and wraps at
+            # 65536, so the true total is rebuilt here by summing modulo-65536
+            # differences between consecutive frames.
+            if self._last_ovf is None:
+                self._ovf_accum = ovf
+                delta = ovf
+            else:
+                delta = (ovf - self._last_ovf) & 0xFFFF
+                self._ovf_accum += delta
             self._last_ovf = ovf
             for s in (self.stats, self.total):
-                s.ovf_total = ovf
+                s.ovf_delta += delta
+                s.ovf_total = self._ovf_accum
 
     def _run(self) -> None:
         while not self._stop.is_set():
             try:
-                if not self._resync():
+                skipped = self._resync()
+                if skipped < 0:
                     return
-                with self._lock:
-                    self.stats.resyncs += 1
-                    self.total.resyncs += 1
+                if skipped:
+                    with self._lock:
+                        for st in (self.stats, self.total):
+                            st.resync_events += 1
+                            st.bytes_skipped += skipped
 
                 body = self.ser.read(BODY_BYTES)
                 if len(body) != BODY_BYTES:
@@ -260,15 +308,34 @@ class FrameReader:
 
 
 # ---------------------------------------------------------------- reporting
-CSV_FIELDS = ["t", "frames_ok", "frames_lost", "drop_rate", "ovf_delta",
-              "ovf_total", "checksum_errors", "resyncs", "throughput_Bps", "verdict"]
+CSV_FIELDS = ["t", "frames_ok", "frames_lost", "drop_rate", "ovf_delta", "ovf_total",
+              "checksum_errors", "resync_events", "bytes_skipped",
+              "payload_Bps", "wire_Bps", "verdict"]
+
+
+def csv_row(iv: LinkStats, t: float) -> dict:
+    return {
+        "t": round(t, 3),
+        "frames_ok": iv.frames_ok,
+        "frames_lost": iv.frames_lost,
+        "drop_rate": round(iv.drop_rate, 6),
+        "ovf_delta": iv.ovf_delta,
+        "ovf_total": iv.ovf_total,
+        "checksum_errors": iv.checksum_errors,
+        "resync_events": iv.resync_events,
+        "bytes_skipped": iv.bytes_skipped,
+        "payload_Bps": round(iv.throughput, 1),
+        "wire_Bps": round(iv.wire_throughput, 1),
+        "verdict": iv.verdict(),
+    }
 
 
 def format_line(iv: LinkStats, fs: float) -> str:
     return (f"{iv.frames_ok:4d} ok  {iv.frames_lost:4d} lost "
             f"({100*iv.drop_rate:6.2f}%)  ovf {iv.ovf_delta:5d} "
             f"(tot {iv.ovf_total:5d})  cksum {iv.checksum_errors:3d}  "
-            f"{iv.throughput/1000:7.2f} kB/s  [{iv.verdict()}]")
+            f"resync {iv.resync_events:3d}  "
+            f"wire {iv.wire_throughput/1000:7.2f} kB/s  [{iv.verdict()}]")
 
 
 def main() -> int:
@@ -288,8 +355,7 @@ def main() -> int:
 
     port = args.port or autodetect_port()
     if not port:
-        print("No serial port found. Pass one explicitly, e.g. /dev/cu.wchusbserial101",
-              file=sys.stderr)
+        print("No serial port found. Is the ESP32-S3 plugged in?", file=sys.stderr)
         return 1
 
     try:
@@ -301,8 +367,12 @@ def main() -> int:
     print(f"Reading {port} — waiting for the first valid frame…")
     reader.start()
     if not reader.wait_first(10.0):
-        print("No valid frame in 10 s. Check wiring, the bitstream, and that the "
-              "FPGA was re-synthesised after the last source change.", file=sys.stderr)
+        print(f"No valid frame in 10 s on {port}.\n"
+              f"  - is this the ESP32 port? others seen: {', '.join(list_ports())}\n"
+              "  - ESP32 sketch uploaded, USB CDC On Boot = Disabled?\n"
+              "  - common ground between the two boards?\n"
+              "  - was the FPGA re-synthesised AND re-programmed after the last edit?",
+              file=sys.stderr)
         reader.stop()
         return 1
 
@@ -310,8 +380,12 @@ def main() -> int:
     fs = sample_rate_from_cfg(cfg)
     nch = channels_from_cfg(cfg)
     offered = fs * 2 * max(nch, 1)
-    print(f"cfg=0x{cfg:04X}  BCLK_DIV={cfg & 0xFF}  channels={nch}  "
-          f"fs={fs:.4f} Hz  offered payload={offered/1000:.2f} kB/s")
+    frame_rate = fs / FRAME_SAMPLES
+    print(f"cfg=0x{cfg:04X}  BCLK_DIV={cfg & 0xFF}  channels={nch}  fs={fs:.4f} Hz")
+    print(f"expect {frame_rate:.2f} frames/s  "
+          f"payload {frame_rate*PAYLOAD_BYTES/1000:.2f} kB/s  "
+          f"wire {frame_rate*FRAME_BYTES/1000:.2f} kB/s "
+          f"({100*frame_rate*FRAME_BYTES/200000:.1f}% of the 2 Mbaud UART)")
 
     csv_writer = None
     csv_file = None
@@ -330,18 +404,7 @@ def main() -> int:
             return
         print(format_line(iv, fs))
         if csv_writer:
-            csv_writer.writerow({
-                "t": round(time.monotonic() - t0, 3),
-                "frames_ok": iv.frames_ok,
-                "frames_lost": iv.frames_lost,
-                "drop_rate": round(iv.drop_rate, 6),
-                "ovf_delta": iv.ovf_delta,
-                "ovf_total": iv.ovf_total,
-                "checksum_errors": iv.checksum_errors,
-                "resyncs": iv.resyncs,
-                "throughput_Bps": round(iv.throughput, 1),
-                "verdict": iv.verdict(),
-            })
+            csv_writer.writerow(csv_row(iv, time.monotonic() - t0))
             csv_file.flush()
 
     # ---------------- headless mode ----------------
@@ -418,25 +481,15 @@ def main() -> int:
             iv, tot = reader.snapshot()
             print(format_line(iv, fs))
             if csv_writer:
-                csv_writer.writerow({
-                    "t": round(now - t0, 3),
-                    "frames_ok": iv.frames_ok,
-                    "frames_lost": iv.frames_lost,
-                    "drop_rate": round(iv.drop_rate, 6),
-                    "ovf_delta": iv.ovf_delta,
-                    "ovf_total": iv.ovf_total,
-                    "checksum_errors": iv.checksum_errors,
-                    "resyncs": iv.resyncs,
-                    "throughput_Bps": round(iv.throughput, 1),
-                    "verdict": iv.verdict(),
-                })
+                csv_writer.writerow(csv_row(iv, now - t0))
                 csv_file.flush()
             status_text[0] = (
                 f"{iv.verdict()}\n"
                 f"drop {100*iv.drop_rate:5.2f}%   ovf {iv.ovf_delta:d} "
                 f"(tot {iv.ovf_total:d})\n"
-                f"cksum err {iv.checksum_errors:d}   {iv.throughput/1000:.1f} kB/s "
-                f"of {offered/1000:.1f}"
+                f"cksum err {iv.checksum_errors:d}   resync {iv.resync_events:d}\n"
+                f"wire {iv.wire_throughput/1000:.1f} kB/s of 200.0 "
+                f"({100*iv.wire_throughput/200000:.0f}% of UART)"
             )
         status.set_text(status_text[0])
         return wave_line, fft_line, peak_marker, status

@@ -147,28 +147,40 @@ Leave it for at least a minute.
 ### What passing looks like
 
 ```
-  29 ok     0 lost (  0.00%)  ovf     0 (tot     0)  cksum   0    30.35 kB/s  [OK]
-  29 ok     0 lost (  0.00%)  ovf     0 (tot     0)  cksum   0    30.35 kB/s  [OK]
+  29 ok     0 lost (  0.00%)  ovf     0 (tot     0)  cksum   0  resync   0  wire   30.35 kB/s  [OK]
 ```
 
 | Field | Required | Why |
 |-------|----------|-----|
-| `ok` | ~29 per second | 15000 samples/s ÷ 512 per frame = 29.3 frames/s |
+| `ok` | ~29 per second | 15000 samples/s / 512 per frame = 29.30 frames/s |
 | `lost` | **0** | no gaps in the sequence numbers |
 | `ovf` | **0** | the FPGA never had to discard a byte |
 | `cksum` | **0** | nothing arrived corrupted |
-| throughput | **~30.35 kB/s** | 29.3 frames/s × 1036 bytes |
+| `resync` | **0** | the stream never had to be re-found |
+| `wire` | **~30.35 kB/s** | 29.30 frames/s x 1036 bytes |
 | verdict | **`OK`** | |
+
+The viewer reports **two** rates and the CSV logs both:
+
+| column | meaning | value at 15 kHz |
+|--------|---------|-----------------|
+| `payload_Bps` | audio bytes delivered | 29.30 x 1024 = **30,000 B/s** |
+| `wire_Bps` | bytes actually on the link, framing included | 29.30 x 1036 = **30,352 B/s** |
+
+`wire_Bps` is the one to compare against the UART's 200 kB/s capacity; `payload_Bps`
+is the useful data. At `BCLK_DIV = 25` the link is 15.2 % loaded.
 
 The waveform and spectrum should look exactly as they did in M1 — quiet room flat, tap the
 mic and it spikes, whistle and the peak follows your pitch.
 
-### About that 30.35 vs the old 30.12
+### Confirming the new bitstream is actually running
 
-M1 measured **30,120 B/s**. This will read **30,352 B/s**. That rise is expected and is not
-a fault: v2 frames are 1036 bytes instead of 1028, because of the 6-byte header and 2-byte
-checksum. 29.3 × 1036 = 30,352. Seeing the old number instead would mean the board is still
-running the M1 bitstream.
+M1 put **1028** bytes on the wire per frame; v2 puts **1036**. So `wire_Bps` must read
+about **30,350**, not the **30,120** M1 measured. Reading the old number means the board is
+still running the M1 bitstream.
+
+Do not use `payload_Bps` for this check — it is 30,000 in both versions, because the audio
+payload did not change.
 
 ### If it fails
 

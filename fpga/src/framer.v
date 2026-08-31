@@ -177,10 +177,19 @@ module framer #(
 
     // ------------------------------------------------------------------
     // FIFO write + overflow counter
-    // A byte pushed into a full FIFO is lost — but it is COUNTED, which is
-    // the entire point of this revision. The counter saturates rather than
-    // wrapping, so a pegged 0xFFFF unambiguously means "massively overflowing"
-    // instead of aliasing back to a small, innocent-looking number.
+    // A byte pushed into a full FIFO is lost — but it is COUNTED, which is the
+    // entire point of this revision.
+    //
+    // The counter is free-running and WRAPS at 65536. It does not saturate. The
+    // host recovers the true total by differencing consecutive frames modulo
+    // 65536, which stays correct for as long as fewer than 65536 bytes are
+    // dropped between two RECEIVED frames. At ~29 frames/s that bound is 1.9 MB/s
+    // of loss — an order of magnitude beyond what a 200 kB/s link can even offer,
+    // so it cannot be reached in this system.
+    //
+    // A saturating counter was tried first and is worse: once pegged at 0xFFFF the
+    // per-interval delta reads zero, and a host looking at deltas would conclude
+    // the FPGA had stopped overflowing exactly when it was overflowing hardest.
     // ------------------------------------------------------------------
     assign ovf_count = ovf_q;
 
@@ -192,8 +201,8 @@ module framer #(
             if (!full) begin
                 mem[wptr[AW-1:0]] <= push_byte;
                 wptr              <= wptr + 1'b1;
-            end else if (ovf_q != 16'hFFFF) begin
-                ovf_q <= ovf_q + 1'b1;                 // dropped, but counted
+            end else begin
+                ovf_q <= ovf_q + 1'b1;                 // dropped, but counted (wraps)
             end
         end
     end

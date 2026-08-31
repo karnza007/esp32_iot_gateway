@@ -24,8 +24,12 @@ Design: [`05-instrumentation.md`](05-instrumentation.md) · Plan:
 - [x] Simulation: `tb_framer` (format + overflow positive control) — PASS
 - [x] Simulation: `tb_chain` (full datapath) at all six sweep points — PASS
 - [x] Host parser verified offline against a synthetic lossy stream
-- [ ] **Hardware null test at `BCLK_DIV = 25`**: zero drops, zero overflow, ~30.35 kB/s
-- [ ] **Hardware positive control**: raise `CLK_PER_BIT`, confirm `ovf` climbs, then restore
+- [x] **Hardware null test at `BCLK_DIV = 25`** — PASS, 191 s continuous:
+      30 frames/s, 0 lost, 0 overflow, 0 checksum errors, verdict `OK`
+      (`data/run-n25-null-v1metrics.csv`)
+- [ ] Re-program with the wrapping overflow counter + corrected metrics
+- [ ] **Hardware positive control**: `CLK_PER_BIT = 96` (250 kbaud), confirm `ovf` climbs
+      and the verdict reads `LINK SATURATED (FPGA FIFO)`, then restore
 
 ## M3 — Load sweep ⬜
 
