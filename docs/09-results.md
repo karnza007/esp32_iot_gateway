@@ -33,6 +33,7 @@ Wire rate for one channel: `fs / 512 × 1036` B/s.
 |-----|---|-----------|------|--------|-----------|-----------|--------|----------|---------|---------|
 | `run-n25-null.csv` | 33 | 959 | 0 | 0.00 | 0 | 0 | 0 | 30,348 | 33 | OK |
 | `run-positive-control.csv` | 211 | 0 | 0 | 0.00 | 6175 | 1,133,450 | 6175 | 0 | 0 | LINK SATURATED (FPGA FIFO) |
+| `run-n25-null-after.csv` | 49 | 1439 | 0 | 0.00 | 0 | 0 | 0 | 30,358 | 33 | OK |
 
 ---
 
@@ -153,3 +154,41 @@ Only that the FPGA-side detection works. The `GATEWAY LOSS (ESP32/USB)` verdict 
 fired and is still unproven — M3 at `BCLK_DIV = 8` should be the first test that triggers
 it, since one channel at 94.8 kB/s exceeds link 2's 92.2 kB/s ceiling while leaving link 1
 less than half loaded.
+
+
+---
+
+## M2-NULL-AFTER — recovery check
+
+**2026-08-31** · `BCLK_DIV = 25`, link 1 restored to 2 Mbaud · raw: `data/run-n25-null-after.csv`
+
+**Question.** After deliberately saturating the link for 211 seconds, does the system
+return to exactly its previous behaviour? This closes the loop: it shows the overload
+*caused* the readings and left nothing damaged behind.
+
+**Result — PASS.**
+
+```
+  duration           49 s (48 one-second intervals)
+  frames received    1439  (of 1439 expected)
+  frames intact      1439
+  frames lost        0     checksum errors 0     short frames 0
+  FPGA overflow      0 bytes
+  delivered wire     30,358 B/s   = 33 % of link 2
+  verdict            OK   in all 48 intervals
+```
+
+**M2 is complete.** The instrument has now been demonstrated in all three states:
+
+| state | run | result |
+|-------|-----|--------|
+| healthy | `run-n25-null.csv` | silent — 0 across every counter |
+| overloaded | `run-positive-control.csv` | accurate — 5,379 B/s vs 5,352 predicted, 0.5 % |
+| restored | `run-n25-null-after.csv` | silent again — 0 across every counter |
+
+A detector that only ever reads zero proves nothing; one that reads zero, then the right
+non-zero number, then zero again, is a working instrument. Every measurement in M3 rests
+on this.
+
+**Repeatability.** Three separate null runs (33 s, 49 s, and an earlier 191 s) measured the
+wire rate at 30,348 / 30,358 / — B/s against 30,352 predicted. Spread under 0.04 %.

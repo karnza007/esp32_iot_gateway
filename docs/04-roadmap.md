@@ -34,7 +34,8 @@ Design: [`05-instrumentation.md`](05-instrumentation.md) · Plan:
 - [x] Header-reservation fix in `framer.v` — under overload the framing now survives while
       audio is sacrificed (found by the positive control: 0 sync words in 5 s before it)
 - [x] Host parser now delimits frames by sync word, making frame length a measurement
-- [ ] Restore `CLK_PER_BIT = 12` / `FPGA_BAUD = 2000000` and re-confirm the null test
+- [x] Restore `CLK_PER_BIT = 12` / `FPGA_BAUD = 2000000` and re-confirm the null test —
+      PASS, 49 s, 1439/1439 frames intact, all counters 0, 30,358 B/s
 
 ## M3 — Load sweep ⬜
 
