@@ -3,14 +3,20 @@
 Displays the latest audio frame as a waveform and a spectrum, and — the point of
 this revision — measures how much data the link is losing and *where*.
 
-FRAME FORMAT v2 (1036 bytes, must match fpga/src/framer.v)
+FRAME FORMAT v3 (1038 bytes, must match fpga/src/framer.v)
     off  size  field
       0     4  sync      AA 55 A5 5A
       4     2  seq       uint16 LE, frame counter, wraps
       6     2  ovf       uint16 LE, cumulative FPGA FIFO overflow BYTES
       8     2  cfg       uint16 LE, [7:0]=BCLK_DIV, [9:8]=channels
-     10  1024  payload   512 x int16 LE
-   1034     2  checksum  uint16 LE, additive sum of the payload bytes
+     10     2  hdrsum    uint16 LE, additive sum of bytes 4..9
+     12  1024  payload   512 x int16 LE
+   1036     2  checksum  uint16 LE, additive sum of the payload bytes
+
+The header has its OWN checksum. The payload checksum does not cover it, because
+under saturation the payload is routinely destroyed while the header survives --
+and seq/ovf are most needed exactly then. Without hdrsum a corrupted header is
+undetectable, and a corrupt ovf value injects phantom overflow.
 
 The sample rate is not hardcoded: it is derived from `cfg` as
     fs = 24 MHz / (64 * BCLK_DIV)
@@ -46,7 +52,7 @@ BAUD = 2_000_000               # link 2: ESP32 UART0 -> CH9102 -> host.
                                # Override per-run with --baud.
 SYNC = b"\xAA\x55\xA5\x5A"
 FRAME_SAMPLES = 512
-HEADER_BYTES = 10              # sync(4) + seq(2) + ovf(2) + cfg(2)
+HEADER_BYTES = 12              # sync(4) + seq(2) + ovf(2) + cfg(2) + hdrsum(2)
 PAYLOAD_BYTES = FRAME_SAMPLES * 2
 TRAILER_BYTES = 2              # checksum
 FRAME_BYTES = HEADER_BYTES + PAYLOAD_BYTES + TRAILER_BYTES   # 1036
@@ -141,6 +147,7 @@ class LinkStats:
     checksum_errors: int = 0
     resync_events: int = 0          # times the stream had to be re-found
     bytes_skipped: int = 0          # garbage bytes discarded while re-finding it
+    header_errors: int = 0          # frames whose HEADER failed its own checksum
     frames_short: int = 0           # frames that arrived with bytes missing
     bytes_missing: int = 0          # how many bytes those frames were missing
     payload_bytes: int = 0          # audio bytes delivered
@@ -156,6 +163,7 @@ class LinkStats:
         self.checksum_errors = 0
         self.resync_events = 0
         self.bytes_skipped = 0
+        self.header_errors = 0
         self.frames_short = 0
         self.bytes_missing = 0
         self.payload_bytes = 0
@@ -184,9 +192,13 @@ class LinkStats:
 
     def verdict(self) -> str:
         """Attribute the loss to a stage. This is the headline result."""
-        if self.ovf_delta > 0 or self.bytes_missing > 0:
+        # ONLY ovf proves the FPGA was the culprit: it is incremented inside the
+        # FPGA. Short frames and missing frames prove bytes went astray SOMEWHERE
+        # -- the ESP32 dropping bytes mid-frame also produces short frames at the
+        # host -- so they must not be attributed to the FPGA on their own.
+        if self.ovf_delta > 0:
             return "LINK SATURATED (FPGA FIFO)"
-        if self.frames_lost > 0:
+        if self.frames_lost > 0 or self.bytes_missing > 0:
             return "GATEWAY LOSS (ESP32/USB)"
         if self.checksum_errors > 0:
             return "SIGNAL INTEGRITY"
@@ -220,6 +232,7 @@ class FrameReader:
         self._last_seq: int | None = None
         self._last_ovf: int | None = None
         self._ovf_accum: int = 0        # our own total; the wire field wraps at 65536
+        self._hdr_err_run: int = 0      # header-corrupt frames since the last good one
         self.frames_seen_any = 0        # sync matched + full body read, intact or not
 
     # -- lifecycle ---------------------------------------------------------
@@ -251,14 +264,14 @@ class FrameReader:
             iv = LinkStats(**{k: getattr(self.stats, k) for k in
                               ("frames_ok", "frames_expected", "frames_lost",
                                "checksum_errors", "resync_events", "bytes_skipped",
-                               "frames_short", "bytes_missing",
+                               "header_errors", "frames_short", "bytes_missing",
                                "payload_bytes", "wire_bytes", "ovf_delta", "ovf_total")})
             iv.t_start = self.stats.t_start
             self.stats.reset_interval()
             tot = LinkStats(**{k: getattr(self.total, k) for k in
                                ("frames_ok", "frames_expected", "frames_lost",
                                 "checksum_errors", "resync_events", "bytes_skipped",
-                                "frames_short", "bytes_missing",
+                                "header_errors", "frames_short", "bytes_missing",
                                 "payload_bytes", "wire_bytes", "ovf_delta", "ovf_total")})
             tot.t_start = self.total.t_start
         return iv, tot
@@ -278,6 +291,10 @@ class FrameReader:
             # frame loss, inferred from gaps in the sequence number
             if self._last_seq is not None:
                 gap = (seq - self._last_seq - 1) & 0xFFFF
+                # Frames rejected for a bad header DID arrive; they are counted as
+                # header_errors, not as loss. Discount them from the gap so the two
+                # failure modes are not double-counted.
+                gap = max(gap - self._hdr_err_run, 0)
                 # a huge "gap" means the counter wrapped past our visibility;
                 # treat only plausible gaps as loss
                 if 0 < gap < 30000:
@@ -287,6 +304,7 @@ class FrameReader:
             for s in (self.stats, self.total):
                 s.frames_expected += 1
             self._last_seq = seq
+            self._hdr_err_run = 0
 
             # FPGA-side overflow. The wire field is free-running and wraps at
             # 65536, so the true total is rebuilt here by summing modulo-65536
@@ -332,7 +350,21 @@ class FrameReader:
         seq = int.from_bytes(frame[4:6], "little")
         ovf = int.from_bytes(frame[6:8], "little")
         cfg = int.from_bytes(frame[8:10], "little")
+        hdrsum = int.from_bytes(frame[10:12], "little")
+        header_ok = (sum(frame[4:10]) & 0xFFFF) == hdrsum
         self.frames_seen_any += 1
+
+        if not header_ok:
+            # seq and ovf cannot be trusted. Using them would inject phantom frame
+            # loss and phantom overflow, and misattribute the failure.
+            with self._lock:
+                self._hdr_err_run += 1
+                for st in (self.stats, self.total):
+                    st.header_errors += 1
+                    if n < FRAME_BYTES:
+                        st.frames_short += 1
+                        st.bytes_missing += FRAME_BYTES - n
+            return
 
         good = False
         if n == FRAME_BYTES:
@@ -408,7 +440,7 @@ class FrameReader:
 # ---------------------------------------------------------------- reporting
 CSV_FIELDS = ["t", "link2_baud", "bclk_div", "channels",
               "frames_ok", "frames_lost", "drop_rate", "ovf_delta", "ovf_total",
-              "checksum_errors", "frames_short", "bytes_missing",
+              "checksum_errors", "header_errors", "frames_short", "bytes_missing",
               "resync_events", "bytes_skipped", "payload_Bps", "wire_Bps", "verdict"]
 
 
@@ -425,6 +457,7 @@ def csv_row(iv: LinkStats, t: float, link2_baud: int = 0,
         "ovf_delta": iv.ovf_delta,
         "ovf_total": iv.ovf_total,
         "checksum_errors": iv.checksum_errors,
+        "header_errors": iv.header_errors,
         "frames_short": iv.frames_short,
         "bytes_missing": iv.bytes_missing,
         "resync_events": iv.resync_events,
@@ -439,7 +472,7 @@ def format_line(iv: LinkStats, fs: float) -> str:
     return (f"{iv.frames_ok:4d} ok  {iv.frames_lost:4d} lost "
             f"({100*iv.drop_rate:6.2f}%)  ovf {iv.ovf_delta:5d} "
             f"(tot {iv.ovf_total:5d})  cksum {iv.checksum_errors:3d}  "
-            f"short {iv.frames_short:3d}({iv.bytes_missing:6d}B)  "
+            f"hdrerr {iv.header_errors:3d}  short {iv.frames_short:3d}({iv.bytes_missing:6d}B)  "
             f"wire {iv.wire_throughput/1000:7.2f} kB/s  [{iv.verdict()}]")
 
 
@@ -612,6 +645,7 @@ def main() -> int:
                 f"drop {100*iv.drop_rate:5.2f}%   ovf {iv.ovf_delta:d} "
                 f"(tot {iv.ovf_total:d})\n"
                 f"cksum err {iv.checksum_errors:d}   "
+                f"hdrerr {iv.header_errors:d}   "
                 f"short {iv.frames_short:d} ({iv.bytes_missing:d} B)\n"
                 f"wire {iv.wire_throughput/1000:.1f} kB/s "
                 f"({100*iv.wire_throughput/link2:.0f}% of link 2)"

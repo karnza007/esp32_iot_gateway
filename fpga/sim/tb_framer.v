@@ -16,7 +16,7 @@ module tb_framer;
 
     localparam integer FRAME_SAMPLES = 8;
     localparam integer FIFO_DEPTH    = 64;
-    localparam integer FRAME_BYTES   = 10 + 2*FRAME_SAMPLES + 2;   // 28
+    localparam integer FRAME_BYTES   = 12 + 2*FRAME_SAMPLES + 2;   // 30
     localparam [15:0]  CFG           = 16'h0119;                   // NUM_CH=1, DIV=25
 
     reg         clk = 0, rst_n = 0;
@@ -133,12 +133,14 @@ module tb_framer;
             check16("seq", {rx[base+5], rx[base+4]}, fnum);
             check16("ovf", {rx[base+7], rx[base+6]}, exp_ovf);
             check16("cfg", {rx[base+9], rx[base+8]}, CFG);
+            check16("hdrsum", {rx[base+11], rx[base+10]},
+                    rx[base+4]+rx[base+5]+rx[base+6]+rx[base+7]+rx[base+8]+rx[base+9]);
 
             exp_sum = 0;
             for (s = 0; s < FRAME_SAMPLES; s = s + 1) begin
                 got = pattern(first_sample + s);
-                check8("payload_lo", rx[base+10+2*s],   got[7:0]);
-                check8("payload_hi", rx[base+10+2*s+1], got[15:8]);
+                check8("payload_lo", rx[base+12+2*s],   got[7:0]);
+                check8("payload_hi", rx[base+12+2*s+1], got[15:8]);
                 exp_sum = (exp_sum + got[7:0] + got[15:8]) % 65536;
             end
             check16("checksum", {rx[base+FRAME_BYTES-1], rx[base+FRAME_BYTES-2]},
@@ -157,7 +159,7 @@ module tb_framer;
                     rx[p]==8'hAA && rx[p+1]==8'h55 && rx[p+2]==8'hA5 && rx[p+3]==8'h5A) begin
                     sum = 0;
                     for (q = 0; q < 2*FRAME_SAMPLES; q = q + 1)
-                        sum = (sum + rx[p+10+q]) % 65536;
+                        sum = (sum + rx[p+12+q]) % 65536;
                     want = {rx[p+FRAME_BYTES-1], rx[p+FRAME_BYTES-2]};
                     if (want == sum[15:0]) find_good_frame = p;
                 end

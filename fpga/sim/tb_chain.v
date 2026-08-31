@@ -23,7 +23,7 @@ module tb_chain #(
 
     localparam integer CLK_PER_BIT  = 12;      // -> 2 Mbaud
     localparam integer FRAME_SAMPLES = 8;      // 8 not 512, purely for run time
-    localparam integer FRAME_BYTES  = 10 + 2*FRAME_SAMPLES + 2;
+    localparam integer FRAME_BYTES  = 12 + 2*FRAME_SAMPLES + 2;
     localparam [15:0]  CFG          = {6'd0, 2'd1, BCLK_DIV[7:0]};
 
     localparam real    CLK_HALF  = 20.8333;                    // 24 MHz
@@ -152,7 +152,7 @@ module tb_chain #(
                               rx[p+2]==8'hA5 && rx[p+3]==8'h5A) begin
                 sum = 0;
                 for (q = 0; q < 2*FRAME_SAMPLES; q = q + 1)
-                    sum = (sum + rx[p+10+q]) % 65536;
+                    sum = (sum + rx[p+12+q]) % 65536;
                 want = {rx[p+FRAME_BYTES-1], rx[p+FRAME_BYTES-2]};
                 if (want == sum[15:0]) base = p;
             end
@@ -166,10 +166,12 @@ module tb_chain #(
             $display("  frame at byte %0d, seq %0d", base, fseq);
             check16("cfg", {rx[base+9], rx[base+8]}, CFG);
             check16("ovf", {rx[base+7], rx[base+6]}, 16'd0);
+            check16("hdrsum", {rx[base+11], rx[base+10]},
+                    rx[base+4]+rx[base+5]+rx[base+6]+rx[base+7]+rx[base+8]+rx[base+9]);
 
             // payload must be the top 16 bits of the mic words for this frame
             for (s = 0; s < FRAME_SAMPLES; s = s + 1) begin
-                gotw = {rx[base+10+2*s+1], rx[base+10+2*s]};
+                gotw = {rx[base+12+2*s+1], rx[base+12+2*s]};
                 want = mic_pattern(fseq*FRAME_SAMPLES + s) >> 8;
                 if (gotw !== want) begin
                     $display("  FAIL sample %0d: got %04h expected %04h", s, gotw, want);

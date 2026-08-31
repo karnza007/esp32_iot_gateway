@@ -7,8 +7,18 @@
 //     4     2  seq        uint16 LE            — frame counter, wraps at 65536
 //     6     2  ovf        uint16 LE            — cumulative FIFO overflow BYTES
 //     8     2  cfg        uint16 LE            — [7:0]=BCLK_DIV, [9:8]=channels
-//    10  1024  payload    512 x int16 LE       — audio samples
-//  1034     2  checksum   uint16 LE            — additive sum of payload bytes
+//    10     2  hdrsum     uint16 LE            — additive sum of bytes 4..9
+//    12  1024  payload    512 x int16 LE       — audio samples
+//  1036     2  checksum   uint16 LE            — additive sum of payload bytes
+//
+// TWO SEPARATE CHECKSUMS, DELIBERATELY
+//   The payload checksum does not cover the header. Under saturation the payload
+//   is routinely destroyed while the header survives (framing bytes have reserved
+//   FIFO space), so one checksum over both would mark every header unusable exactly
+//   when its seq and ovf are most needed. Conversely, without hdrsum a corrupted
+//   header is undetectable: measured 2026-08-31, one corrupted ovf field injected a
+//   spurious 65,536-byte overflow, and corrupted seq values inflate apparent frame
+//   loss. Each region is therefore checked on its own.
 // ----------------------------------------------------------------------------
 //
 // WHY THE EXTRA FIELDS EXIST
@@ -45,7 +55,7 @@
 module framer #(
     parameter integer FIFO_DEPTH = 64,      // bytes; must be a power of two
     parameter integer FRAME_SAMPLES = 512,
-    parameter integer HDR_RESERVE  = 16     // bytes kept free for header + checksum
+    parameter integer HDR_RESERVE  = 20     // bytes kept free for header + checksums
 )(
     input  wire        clk,
     input  wire        rst_n,
@@ -111,8 +121,10 @@ module framer #(
                      P_SQ0  = 4'd5,  P_SQ1 = 4'd6,      // seq  lo, hi
                      P_OV0  = 4'd7,  P_OV1 = 4'd8,      // ovf  lo, hi
                      P_CF0  = 4'd9,  P_CF1 = 4'd10,     // cfg  lo, hi
-                     P_LO   = 4'd11, P_HI  = 4'd12,     // sample lo, hi
-                     P_CK0  = 4'd13, P_CK1 = 4'd14;     // checksum lo, hi
+                     P_HS0  = 4'd11, P_HS1 = 4'd12,     // header checksum lo, hi
+                     P_LO   = 4'd13, P_HI  = 4'd14,     // sample lo, hi
+                     P_CK0  = 4'd15;                    // payload checksum (2 bytes)
+    reg ck_hi;                                          // which trailer byte is next
 
     reg  [3:0]  pstate = P_IDLE;
     reg [15:0]  sreg   = 16'd0;                  // sample being serialised
@@ -124,6 +136,12 @@ module framer #(
     reg [$clog2(FRAME_SAMPLES):0] scount = 0;    // sample index 0 .. N-1
 
     assign seq_count = seq_q;
+
+    // header checksum: additive sum of the six header bytes (seq, ovf, cfg).
+    // Combinational from the latched snapshot, so it is stable for the whole frame.
+    wire [15:0] hsum = {8'd0, hdr_seq[7:0]}  + {8'd0, hdr_seq[15:8]}
+                     + {8'd0, hdr_ovf[7:0]}  + {8'd0, hdr_ovf[15:8]}
+                     + {8'd0, cfg[7:0]}      + {8'd0, cfg[15:8]};
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -137,6 +155,7 @@ module framer #(
             push    <= 1'b0;
             push_hdr  <= 1'b0;
             push_byte <= 8'd0;
+            ck_hi     <= 1'b0;
         end else begin
             push <= 1'b0;                        // default: no push this cycle
             case (pstate)
@@ -165,7 +184,9 @@ module framer #(
                 P_OV0: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= hdr_ovf[7:0];  pstate <= P_OV1; end
                 P_OV1: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= hdr_ovf[15:8]; pstate <= P_CF0; end
                 P_CF0: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= cfg[7:0];      pstate <= P_CF1; end
-                P_CF1: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= cfg[15:8];     pstate <= P_LO;  end
+                P_CF1: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= cfg[15:8];     pstate <= P_HS0; end
+                P_HS0: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= hsum[7:0];     pstate <= P_HS1; end
+                P_HS1: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= hsum[15:8];    pstate <= P_LO;  end
 
                 // ---- one sample: low byte then high byte -------------------
                 P_LO: begin
@@ -192,10 +213,15 @@ module framer #(
                 // ---- 2-byte checksum trailer ------------------------------
                 // sum_q was updated by P_HI's non-blocking assignment, so it is
                 // already final by the time this state runs.
-                P_CK0: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= sum_q[7:0];  pstate <= P_CK1; end
-                P_CK1: begin push <= 1'b1; push_hdr <= 1'b1; push_byte <= sum_q[15:8];
-                             seq_q  <= seq_q + 1'b1;         // next frame's number
-                             pstate <= P_IDLE; end
+                P_CK0: if (!ck_hi) begin
+                           push <= 1'b1; push_hdr <= 1'b1; push_byte <= sum_q[7:0];
+                           ck_hi <= 1'b1;
+                       end else begin
+                           push <= 1'b1; push_hdr <= 1'b1; push_byte <= sum_q[15:8];
+                           ck_hi  <= 1'b0;
+                           seq_q  <= seq_q + 1'b1;
+                           pstate <= P_IDLE;
+                       end
 
                 default: pstate <= P_IDLE;
             endcase
