@@ -10,7 +10,7 @@ serial links have been characterised to their limits.
 | link | proven limit | capacity | nature of the limit |
 |------|--------------|----------|---------------------|
 | 1. FPGA → ESP32 | **13.5 Mbaud** (18 Mbaud fails) | 1,350,000 B/s | physical — bits stop resolving |
-| 2. ESP32 → host, CH9102 | **6 Mbaud**, and lossy there | 579,875 B/s | software — the macOS driver refuses to open the port |
+| 2. ESP32 → host, CH9102 | **4 Mbaud** best usable; only 12 MHz ÷ n rates work at all | 390,031 B/s at 0.0024 % loss | bridge's baud generator, then the macOS driver at 6 Mbaud |
 | 2. ESP32 → host, **native USB** | none configured | **988,789 B/s** | not reached |
 
 End-to-end ceiling **989,000 B/s** over native USB — 65 % better than the CH9102 path, for no

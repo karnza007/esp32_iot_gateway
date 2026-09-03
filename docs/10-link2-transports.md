@@ -1,6 +1,7 @@
 # 10 — Link 2: three transports measured
 
-**2026-09-03** · `firmware/link2_blast` + `tools/measure_link2.py` · 10 s per transport
+**2026-09-03** · `firmware/link2_blast` + `tools/measure_link2.py`
+10 s per transport for the first comparison; 30 s per point for the lossless sweep
 
 ---
 
@@ -103,3 +104,101 @@ already caused two failures in this project.
 The one thing it changes is framing: the gateway stops being a "UART bridge" and becomes a
 USB device. That is arguably more honest about what it always was — the CH9102 was only ever
 translating to USB anyway, and translating it badly.
+
+
+---
+
+## The lossless sweep — 30 s per point, pattern counting modulo 251
+
+The first comparison ranked the transports. It could not say where the CH9102 path stops
+being *clean*, which is a different and more useful number. Nine UART rates and native USB,
+30 s each.
+
+**The pattern was changed from a byte counter to modulo 251 first.** A counter wrapping at
+256 is blind to a loss of exactly 256 bytes, or 512, or 1024 — and those are precisely the
+sizes serial buffers come in, so the blind spot sat exactly where the losses would be. 251 is
+prime; no buffer size is a multiple of it. Every figure below is a real measurement rather
+than a lower bound.
+
+| baud | throughput | % of nominal | discontinuities | bytes lost | loss |
+|---|---|---|---|---|---|
+| 921,600 | 92,608 B/s | 100.5 % | 4 | 456 | 0.0163 % |
+| 1,000,000 | 100,378 B/s | 100.4 % | 4 | 565 | 0.0187 % |
+| 1,500,000 | 150,252 B/s | 100.2 % | 4 | 486 | 0.0108 % |
+| 2,000,000 | 198,924 B/s | 99.5 % | 4 | 589 | 0.0099 % |
+| **2,500,000** | 247,876 B/s | 99.2 % | 3,440,875 | — | **GARBAGE — 94 % of bytes wrong** |
+| 3,000,000 | 296,028 B/s | 98.7 % | 7 | 918 | 0.0103 % |
+| **4,000,000** | **390,031 B/s** | 97.5 % | **3** | **287** | **0.0024 %** ← best |
+| **5,000,000** | 0 B/s | 0 % | — | — | **NO DATA AT ALL** |
+| 6,000,000 | 577,156 B/s | 96.2 % | 794 | 100,070 | **0.5729 %** |
+| **native USB** | **969,619 B/s** | — | **0** | **0** | **LOSSLESS** |
+
+### The CH9102 only works at 12 MHz ÷ an integer
+
+Two rates failed completely, and they are not the fast ones — 2.5 Mbaud produced garbage
+while 3 and 4 Mbaud were fine, and 5 Mbaud produced nothing while 6 Mbaud worked. That
+ordering rules out a speed limit.
+
+| baud | 12 MHz ÷ baud | integer? | result |
+|---|---|---|---|
+| 1,000,000 | 12.000 | yes | works |
+| 1,500,000 | 8.000 | yes | works |
+| 2,000,000 | 6.000 | yes | works |
+| **2,500,000** | **4.800** | **no** | **garbage** |
+| 3,000,000 | 4.000 | yes | works |
+| 4,000,000 | 3.000 | yes | works |
+| **5,000,000** | **2.400** | **no** | **nothing** |
+| 6,000,000 | 2.000 | yes | works |
+
+**Every rate that worked divides 12 MHz by an integer. Both that failed do not.** 921,600 is
+the apparent exception at 13.021, but `12 MHz / 13 = 923,077` is 0.16 % off — well inside a
+UART receiver's tolerance — whereas 4.8 and 2.4 are not close to anything.
+
+The bridge's baud generator evidently derives from a 12 MHz reference, and for an
+unreachable divisor it settles on a neighbouring one, leaving the two ends disagreeing.
+**The driver reports success in every case** — `ser.baudrate` reads back exactly what was
+requested at 2.5 M and 5 M — so nothing warns you. The link simply delivers garbage, or
+silence.
+
+*(Presented as the explanation the data strongly supports, not as a datasheet fact: the
+CH9102's reference clock was inferred from these nine measurements, not read from
+documentation.)*
+
+### No UART rate was lossless
+
+Every working rate lost something. But the shape of it matters:
+
+- **From 921,600 to 4,000,000 the loss is a floor, not a slope** — 3 to 7 discontinuities per
+  30 s regardless of rate, and *lowest at the fastest working rate*. A constant number of
+  events per unit time, independent of data volume, does not look like link stress; it looks
+  like the host being descheduled and the driver's buffer overrunning. It is probably a
+  property of the measuring setup rather than of the bridge.
+- **6,000,000 breaks that pattern decisively** — 794 discontinuities and 0.57 %, roughly 80×
+  the floor and clearly rate-dependent. That is the link failing, not the host.
+
+**Best usable UART rate: 4,000,000 baud** — 390,031 B/s at 0.0024 % loss, the lowest of every
+rate tested. Not 6 Mbaud, which the driver permits but which loses 240× more.
+
+### Native USB is the only clean transport
+
+Zero discontinuities across **29,097,984 bytes**. On the same measuring setup that showed a
+0.01 % floor at every UART rate, native USB showed nothing at all — which suggests the floor
+really is in the UART path rather than in the host, and strengthens rather than weakens the
+comparison.
+
+| | best usable rate | throughput | loss |
+|---|---|---|---|
+| CH9102 UART | 4,000,000 baud | 390,031 B/s | 0.0024 % |
+| **native USB** | no rate to set | **969,619 B/s** | **0** |
+
+**2.5× the throughput, and the only transport that lost nothing.**
+
+### A bug this run exposed in the measuring tool
+
+The 5 Mbaud point first reported **`LOSSLESS`** while receiving **zero bytes** — no data means
+no discontinuities, and the verdict logic had no case for it. Corrected to distinguish
+`NO DATA`, `GARBAGE` (bytes arriving but not following the pattern) and `LOSSY`.
+
+Worth noting because it is the same class of mistake as the 111 % corruption figure in
+M3-D §10: **a metric that is only exercised by success will not be tested by success.** Both
+bugs surfaced only when a link failed in a way the tool had not anticipated.

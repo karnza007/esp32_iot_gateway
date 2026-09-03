@@ -40,6 +40,9 @@ def main() -> int:
     time.sleep(0.3)
     ser.reset_input_buffer()
 
+    MOD = 251         # prime, so a loss is invisible only if it is a multiple of
+                      # 251 -- and no serial buffer is. A mod-256 counter would be
+                      # blind to exactly the 256/512/1024-byte losses we are hunting.
     total = 0
     gaps = 0          # discontinuities in the counting sequence = loss
     lost = 0          # bytes implied missing by those discontinuities
@@ -54,13 +57,13 @@ def main() -> int:
         if not d:
             continue
         total += len(d)
-        if prev is not None and d[0] != (prev + 1) & 0xFF:
+        if prev is not None and d[0] != (prev + 1) % MOD:
             gaps += 1
-            lost += (d[0] - prev - 1) & 0xFF
+            lost += (d[0] - prev - 1) % MOD
         for i in range(1, len(d)):
-            if d[i] != (d[i - 1] + 1) & 0xFF:
+            if d[i] != (d[i - 1] + 1) % MOD:
                 gaps += 1
-                lost += (d[i] - d[i - 1] - 1) & 0xFF
+                lost += (d[i] - d[i - 1] - 1) % MOD
         prev = d[-1]
     elapsed = time.monotonic() - t0
     ser.close()
@@ -73,8 +76,17 @@ def main() -> int:
     if a.baud and "usbmodem" not in a.port:
         print(f"    nominal       {a.baud//10:,} B/s at {a.baud:,} baud "
               f"->  {100*rate/(a.baud/10):.1f} % achieved")
+    pct = 100.0 * lost / (total + lost) if total else 0.0
+    if total == 0:
+        verdict = "NO DATA - the link carried nothing"
+    elif gaps == 0:
+        verdict = "LOSSLESS"
+    elif pct > 50:
+        verdict = f"GARBAGE  {pct:.2f} % - bytes arrive but do not follow the pattern"
+    else:
+        verdict = f"LOSSY  {pct:.4f} %"
     print(f"    sequence      {gaps} discontinuit{'y' if gaps == 1 else 'ies'}, "
-          f"{lost:,} bytes implied lost")
+          f"{lost:,} bytes implied lost   ->  {verdict}")
     return 0
 
 

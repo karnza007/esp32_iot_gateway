@@ -47,22 +47,32 @@
 #define TARGET_UART0 0        // CH9102 bridge  -> /dev/cu.wchusbserial*
 #define TARGET_USB   1        // native USB     -> /dev/cu.usbmodem*
 
-constexpr int      BLAST_TARGET = TARGET_USB;
-constexpr uint32_t UART0_BAUD   = 2000000;   // ignored when TARGET_USB
+constexpr int      BLAST_TARGET = TARGET_UART0;
+constexpr uint32_t UART0_BAUD   = 2500000;   // ignored when TARGET_USB
 constexpr size_t   CHUNK        = 512;       // bytes per write() call
 
-// The pattern is a plain incrementing byte. It makes the stream self-checking: the
-// host knows every byte must be exactly one more than the last, so a discontinuity
-// is loss, and the size of the jump says how many bytes went missing (mod 256).
-// Speed without integrity is not a measurement -- this project has already seen a
-// link carry its full byte rate while delivering zero usable frames.
+// The pattern counts modulo 251, NOT 256.
+//
+// It has to be self-checking: the host knows every byte must be exactly one more
+// than the last, so a discontinuity is loss and the size of the jump says how many
+// bytes went missing. Speed without integrity is not a measurement -- this project
+// has already seen a link carry its full byte rate while delivering zero usable
+// frames.
+//
+// But a byte counter wrapping at 256 is blind to a loss of exactly 256 bytes, or
+// 512, or 1024 -- the sequence looks perfectly continuous across it. Those are
+// precisely the sizes serial buffers come in, so the blind spot sits exactly where
+// the losses would be. 251 is prime: a loss is invisible only if it is a multiple
+// of 251, and no buffer is. The pattern stays self-aligning (each byte still says
+// what the next must be), so there is no phase to recover.
+static const uint8_t MODULUS = 251;
 static uint8_t buf[CHUNK];
 static uint8_t next_val = 0;
 
 static Stream *out = nullptr;
 
 void setup() {
-  for (size_t i = 0; i < CHUNK; i++) buf[i] = (uint8_t)i;   // refilled in loop()
+  for (size_t i = 0; i < CHUNK; i++) buf[i] = (uint8_t)(i % MODULUS);  // refilled in loop()
 
   if (BLAST_TARGET == TARGET_USB) {
 #if ARDUINO_USB_MODE && ARDUINO_USB_CDC_ON_BOOT
@@ -83,6 +93,9 @@ void loop() {
   // allows -- which is the quantity being measured. No timing is done here on
   // purpose: the device can only see how fast its own buffer drains, whereas the
   // host sees what actually arrived, and the host is what the viewer will be.
-  for (size_t i = 0; i < CHUNK; i++) buf[i] = next_val++;
+  for (size_t i = 0; i < CHUNK; i++) {
+    buf[i] = next_val;
+    next_val = (uint8_t)((next_val + 1) % MODULUS);
+  }
   out->write(buf, CHUNK);
 }
