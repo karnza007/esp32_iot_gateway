@@ -17,7 +17,7 @@ PY=$ROOT/.venv/bin/python
 SKETCH=firmware/fpga_uart_bridge/fpga_uart_bridge.ino
 DIR=firmware/fpga_uart_bridge
 PORT=$(ls /dev/cu.wchusbserial* 2>/dev/null | head -1)
-EXPECT_SYNC=29.3          # BCLK_DIV=25 -> 15000/512 frames per second
+EXPECT_SYNC=29.4          # BCLK_DIV=56 at 54 MHz -> 15067/512 frames per second
 
 set_mode()  { sed -i '' -E "s|^(constexpr int MODE_DIAG = )[0-9]+;|\1${1};|" "$SKETCH"; }
 set_baud1() { sed -i '' -E "s|^(constexpr uint32_t FPGA_BAUD   = )[0-9]+;|\1${1};|" "$SKETCH"; }
@@ -34,9 +34,9 @@ build_fpga() {
 flash_esp() { arduino-cli compile --upload -b esp32:esp32:esp32s3 -p "$PORT" "$DIR" >/tmp/ard.log 2>&1; }
 
 PHASE=$1; shift
-sed -i '' -E "s|^( *parameter integer BCLK_DIV *= *)[0-9]+,|\125,|" fpga/src/top.v
+sed -i '' -E "s|^( *parameter integer BCLK_DIV *= *)[0-9]+,|\156,|" fpga/src/top.v
 set_mode 1
-echo "gateway in MODE_DIAG, BCLK_DIV=25 (~30 kB/s, a light load on purpose)"
+echo "gateway in MODE_DIAG, BCLK_DIV=56 (~30 kB/s, a light load on purpose)"
 echo
 
 if [ "$PHASE" = "D1" ]; then
@@ -53,10 +53,12 @@ if [ "$PHASE" = "D1" ]; then
     # attributable to link 1. This sees rare bit errors that sync-counting cannot.
     set_mode 0
     set_baud2 2000000
-    sed -i '' -E "s|^( *parameter integer BCLK_DIV *= *)[0-9]+,|\18,|" fpga/src/top.v
+    # Highest sample rate available: BCLK = SYS_CLK / BCLK_DIV must stay <= 3.2 MHz,
+    # so 18 at 54 MHz (was 8 at 24 MHz). Same 95 kB/s of offered data either way.
+    sed -i '' -E "s|^( *parameter integer BCLK_DIV *= *)[0-9]+,|\118,|" fpga/src/top.v
     SECS=${SECS:-45}
     for CPB in "$@"; do
-        B1=$(( 24000000 / CPB ))
+        B1=$(( 54000000 / CPB ))
         CSV="data/m3d-D1-baud${B1}.csv"
         echo "--- link 1 = ${B1} baud (CLK_PER_BIT=${CPB}), ${SECS}s at 95 kB/s ---"
         set_cpb "$CPB"; set_baud1 "$B1"
@@ -74,7 +76,9 @@ import csv, sys
 rows = list(csv.DictReader(open(sys.argv[1])))[1:]
 S = lambda k: sum(int(r[k]) for r in rows)
 ok, cks, hdr, lost = S("frames_ok"), S("checksum_errors"), S("header_errors"), S("frames_lost")
-seen = ok + cks
+# every frame whose sync word was found counts as "seen", including ones rejected
+# for a bad header -- leaving those out of the denominator produced a 111% rate
+seen = ok + cks + hdr
 bad = cks + hdr
 rate = 100 * bad / seen if seen else 100.0
 mark = "CLEAN" if bad == 0 else ("MARGINAL" if rate < 1 else "FAILING")
@@ -90,8 +94,8 @@ elif [ "$PHASE" = "D2" ]; then
     # only 95 kB/s of 600 kB/s (16 %), so it cannot be the source of any error.
     # Every checksum or header error is therefore attributable to link 2.
     set_mode 0
-    set_cpb 4; set_baud1 6000000            # link 1 held at its proven-clean rate
-    sed -i '' -E "s|^( *parameter integer BCLK_DIV *= *)[0-9]+,|\18,|" fpga/src/top.v
+    set_cpb 9; set_baud1 6000000            # link 1 held at its proven-clean rate
+    sed -i '' -E "s|^( *parameter integer BCLK_DIV *= *)[0-9]+,|\118,|" fpga/src/top.v
     SECS=${SECS:-45}
     build_fpga || { echo "FPGA BUILD/PROGRAM FAILED"; exit 1; }
     echo "link 1 pinned at 6,000,000 baud (proven clean); BCLK_DIV=8 -> 95 kB/s offered"
