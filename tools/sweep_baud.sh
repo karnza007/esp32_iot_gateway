@@ -17,7 +17,7 @@ IDE=/Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE
 PRG=/Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/Programmer/bin/programmer_cli
 PY=$ROOT/.venv/bin/python
 SKETCH=firmware/fpga_uart_bridge
-FQBN=esp32:esp32:esp32s3
+FQBN=esp32:esp32:esp32s3:CDCOnBoot=cdc
 PORT=$(ls /dev/cu.wchusbserial* 2>/dev/null | head -1)
 
 PHASE=$1; DIV=$2; SECS=$3; shift 3

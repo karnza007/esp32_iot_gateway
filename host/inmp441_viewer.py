@@ -69,10 +69,21 @@ BCLK_PER_FRAME = 64
 FFT_YMAX_DEFAULT = 5000        # fixed magnitude axis; no auto-scaling
 
 
-# Port-name families, most-likely-ESP32 first. The Tang Nano 4K's own FT2232
-# debugger also enumerates as /dev/cu.usbserial-* (two of them: JTAG + UART), so
-# that family is tried last and never silently preferred over a real gateway port.
-PORT_GLOBS = ("/dev/cu.wchusbserial*", "/dev/cu.usbmodem*", "/dev/cu.usbserial*")
+# Port-name families, best-transport first. Link 2 now runs over the ESP32-S3's
+# native USB (/dev/cu.usbmodem*), which measured 969,619 B/s losslessly against the
+# CH9102 bridge's best usable 390,031 B/s -- see docs/10-link2-transports.md. The
+# CH9102 port is kept as a fallback. The Tang Nano's own FT2232 debugger also shows
+# up as /dev/cu.usbserial-*, so that family is tried last and never silently
+# preferred over a real gateway port.
+PORT_GLOBS = ("/dev/cu.usbmodem*", "/dev/cu.wchusbserial*", "/dev/cu.usbserial*")
+
+# Measured capacity of native USB CDC on this board, for the "% of link 2" figure.
+# USB has no baud rate to divide by, so the number has to come from measurement.
+USB_CDC_BPS = 969_619
+
+
+def is_native_usb(port: str) -> bool:
+    return "usbmodem" in port
 
 
 def list_ports() -> list[str]:
@@ -525,9 +536,14 @@ def main() -> int:
         print(f"Could not open {port}: {e}", file=sys.stderr)
         return 1
 
-    link2 = args.baud // 10
-    print(f"Reading {port} @ {args.baud} baud (link 2 = {link2:,} B/s) — "
-          "waiting for the first frame…")
+    if is_native_usb(port):
+        link2 = USB_CDC_BPS
+        print(f"Reading {port} — native USB, no baud rate "
+              f"(measured {link2:,} B/s) — waiting for the first frame…")
+    else:
+        link2 = args.baud // 10
+        print(f"Reading {port} @ {args.baud} baud (link 2 = {link2:,} B/s) — "
+              "waiting for the first frame…")
     reader.start()
     if not reader.wait_first(10.0):
         if reader.frames_seen_any:

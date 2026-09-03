@@ -202,3 +202,51 @@ no discontinuities, and the verdict logic had no case for it. Corrected to disti
 Worth noting because it is the same class of mistake as the 111 % corruption figure in
 M3-D §10: **a metric that is only exercised by success will not be tested by success.** Both
 bugs surfaced only when a link failed in a way the tool had not anticipated.
+
+
+---
+
+## Decision: link 2 is now native USB
+
+Adopted 2026-09-03. `firmware/fpga_uart_bridge` selects the peripheral by name
+(`LINK2 = LINK2_USB`), the viewer prefers `/dev/cu.usbmodem*`, and every sweep script builds
+with `CDCOnBoot=cdc`. The CH9102 path remains selectable with a one-line change.
+
+**Verification — the audio chain over native USB:**
+
+```
+cfg=0x2538  sys_clk=54 MHz  BCLK_DIV=56  channels=1  fs=15066.9643 Hz
+
+  duration           44 s
+  frames received    1302  (of 1302 expected)
+  frames intact      1302
+  frames lost 0   checksum 0   header 0   overflow 0   resync 0
+  delivered wire     30,578 B/s   = 15 % of link 1, 3 % of link 2
+  verdict            OK   in all 44 intervals
+```
+
+Identical audio, identical rate, and link 2 now sits at **3 % load instead of 15 %**.
+
+### Why this is the right choice for link 2, in one place
+
+| | CH9102 UART | native USB |
+|---|---|---|
+| best usable throughput | 390,031 B/s (at 4 Mbaud) | **969,619 B/s** |
+| loss at that rate | 0.0024 % | **0** |
+| lossless at any rate? | **no** — every rate tested lost data | **yes** |
+| rates that work | only 12 MHz ÷ integer; others fail silently | not applicable |
+| configuration to keep in sync | two constants, both ends | **none** |
+| back-pressure | **none** — a late receiver loses data permanently | built in — a late receiver costs latency |
+| extra hardware in the path | the CH9102 bridge | none |
+
+**2.5× the throughput, no loss, no rate to agree on, and one less chip in the path.** The
+CH9102 was only ever translating UART to USB; removing it removes the translation and the
+translation's limits.
+
+### The one honest qualification
+
+UART is not inherently lossy — **UART *without flow control* is.** RTS/CTS would let a late
+receiver stall the sender instead of losing bytes. Those lines are not wired between the
+ESP32 and the CH9102 on this board, and the FPGA link does not use them either, so this was
+not testable here. The measured claim is therefore: *every UART configuration available to
+this project lost data; native USB did not.*

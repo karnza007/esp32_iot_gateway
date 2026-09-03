@@ -1,7 +1,7 @@
 // fpga_uart_bridge.ino — ESP32-S3 gateway between the FPGA and the host.
 //
 //   FPGA (Tang Nano 4K) pin 42 ──link 1──▶ ESP32-S3 GPIO18 (RX)
-//   ESP32-S3 ──link 2 (UART0 → CH9102 → USB)──▶ host
+//   ESP32-S3 ──link 2──▶ host   (native USB by default; CH9102 still selectable)
 //
 // TWO LINKS, TWO BAUD RATES, EACH SET IN TWO PLACES:
 //   link 1  FPGA -> ESP32 :  FPGA_BAUD here  ==  SYS_CLK_MHZ / CLK_PER_BIT in top.v
@@ -18,7 +18,26 @@
 constexpr int      FPGA_RX_PIN = 18;        // ESP32-S3 GPIO <- FPGA UART TX (pin 42)
 constexpr int      FPGA_TX_PIN = 17;        // unused (no data back to the FPGA)
 constexpr uint32_t FPGA_BAUD   = 2000000;   // link 1: must match SYS_CLK_MHZ / CLK_PER_BIT in top.v
-constexpr uint32_t HOST_BAUD   = 2000000;   // link 2: must match --baud in inmp441_viewer.py
+constexpr uint32_t HOST_BAUD   = 2000000;   // link 2, CH9102 path only; USB has no baud
+
+// Link 2 transport. Measured 2026-09-03 (docs/10-link2-transports.md):
+//
+//   CH9102 UART, best usable rate 4 Mbaud   390,031 B/s   0.0024 % lost
+//   native USB                              969,619 B/s   0 lost in 29 MB
+//
+// Native USB is 2.5x faster and the only one of the two that lost nothing. The
+// difference is structural, not a speed limit: a UART bridge has no back-pressure,
+// so if the host is late those bytes are gone forever, whereas USB CDC makes the
+// device wait. Every UART rate tested lost data at roughly one event every 7-10
+// seconds REGARDLESS of throughput -- loss that tracks time, not bytes, which is
+// the signature of a receiver being late rather than a link being full.
+//
+// It also deletes the baud-matching trap: there is no rate to agree on, and the
+// CH9102 turned out to work only at 12 MHz / integer rates while reporting success
+// at the others.
+#define LINK2_UART0 0        // CH9102 bridge  -> /dev/cu.wchusbserial*
+#define LINK2_USB   1        // native USB     -> /dev/cu.usbmodem*
+constexpr int LINK2 = LINK2_USB;
 
 // 0 = pump (normal operation), 1 = diagnostic.
 //
@@ -50,6 +69,7 @@ constexpr size_t RX_BUFFER = 4096;
 constexpr uint8_t SYNC[4] = {0xAA, 0x55, 0xA5, 0x5A};
 
 static uint8_t buf[1024];
+static Print   *host = nullptr;     // link 2, whichever peripheral was selected
 
 // diagnostic state
 static uint32_t rx_bytes   = 0;    // bytes seen on link 1 since boot
@@ -60,7 +80,14 @@ static uint32_t last_ms    = 0;
 static uint32_t last_bytes = 0;
 
 void setup() {
-  Serial.begin(HOST_BAUD);                  // link 2: UART0 -> CH9102 -> host
+  // Pick the peripheral by name rather than relying on the `Serial` alias, which
+  // the core #defines to one or the other depending on the build options.
+#if ARDUINO_USB_MODE && ARDUINO_USB_CDC_ON_BOOT
+  if (LINK2 == LINK2_USB) { HWCDCSerial.begin(); host = &HWCDCSerial; }
+  else                    { Serial0.begin(HOST_BAUD); host = &Serial0; }
+#else
+  Serial0.begin(HOST_BAUD); host = &Serial0;   // built without CDC on boot
+#endif
   Serial1.setRxBufferSize(RX_BUFFER);       // must precede begin()
   Serial1.begin(FPGA_BAUD, SERIAL_8N1, FPGA_RX_PIN, FPGA_TX_PIN);
   last_ms = millis();
@@ -82,7 +109,7 @@ void loop() {
           }
         }
       } else {
-        Serial.write(buf, r);                   // pump: forward verbatim
+        host->write(buf, r);                    // pump: forward verbatim
       }
     }
   }
@@ -91,7 +118,7 @@ void loop() {
     uint32_t now = millis();
     if (now - last_ms >= 500) {
       uint32_t rate = (uint32_t)((rx_bytes - last_bytes) * 1000ULL / (now - last_ms));
-      Serial.printf("GWDIAG hb=%lu rx=%lu sync=%lu rate=%lu baud1=%lu baud2=%lu\n",
+      host->printf("GWDIAG hb=%lu rx=%lu sync=%lu rate=%lu baud1=%lu baud2=%lu\n",
                     (unsigned long)hb++, (unsigned long)rx_bytes,
                     (unsigned long)sync_count, (unsigned long)rate,
                     (unsigned long)FPGA_BAUD, (unsigned long)HOST_BAUD);

@@ -11,7 +11,7 @@ serial links have been characterised to their limits.
 |------|--------------|----------|---------------------|
 | 1. FPGA → ESP32 | **13.5 Mbaud** (18 Mbaud fails) | 1,350,000 B/s | physical — bits stop resolving |
 | 2. ESP32 → host, CH9102 | **4 Mbaud** best usable; only 12 MHz ÷ n rates work at all | 390,031 B/s at 0.0024 % loss | bridge's baud generator, then the macOS driver at 6 Mbaud |
-| 2. ESP32 → host, **native USB** | none configured | **988,789 B/s** | not reached |
+| 2. ESP32 → host, **native USB** ← in use | none configured | **969,619 B/s** | not reached |
 
 End-to-end ceiling **989,000 B/s** over native USB — 65 % better than the CH9102 path, for no
 hardware change, and the only transport of the three that lost nothing. Two INMP441s produce
@@ -41,11 +41,11 @@ measurements. The audio itself is the payload; the transport comparison is the r
 ┌───────────┐  I2S   ┌──────────────────┐ link 1  ┌───────────┐  link 2   ┌──────────┐
 │  INMP441  │ ─────▶ │  Tang Nano 4K    │ ──────▶ │ ESP32-S3  │ ────────▶ │  MacBook │
 │ MEMS mic  │ SCK    │  GW1NSR-4C       │  UART   │  gateway  │  UART0 →  │  viewer  │
-│  L/R→GND  │ WS  SD │  PLL 27→54 MHz   │ 2 Mbaud │  (pump)   │  CH9102   │  Python  │
-└───────────┘        └──────────────────┘ 1 wire  └───────────┘  2 Mbaud  └──────────┘
+│  L/R→GND  │ WS  SD │  PLL 27→54 MHz   │ 2 Mbaud │  (pump)   │ NATIVE USB│  Python  │
+└───────────┘        └──────────────────┘ 1 wire  └───────────┘  969 kB/s └──────────┘
                                                         │
-                                                        └── native USB also present,
-                                                            not yet used for data
+                                                        └── CH9102 bridge still on the
+                                                            board, kept for flashing
 ```
 
 | Stage    | Hardware                  | Role                                                  |

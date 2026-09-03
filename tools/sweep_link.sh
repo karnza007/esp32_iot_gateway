@@ -31,7 +31,7 @@ build_fpga() {
     "$PRG" -d GW1NSR-4C -r 2 --fsFile "$ROOT/fpga/impl/pnr/i2s_capture.fs" >/tmp/gw_prog.log 2>&1
     grep -q 'Finished' /tmp/gw_prog.log
 }
-flash_esp() { arduino-cli compile --upload -b esp32:esp32:esp32s3 -p "$PORT" "$DIR" >/tmp/ard.log 2>&1; }
+flash_esp() { arduino-cli compile --upload -b esp32:esp32:esp32s3:CDCOnBoot=cdc -p "$PORT" "$DIR" >/tmp/ard.log 2>&1; }
 
 PHASE=$1; shift
 sed -i '' -E "s|^( *parameter integer BCLK_DIV *= *)[0-9]+,|\156,|" fpga/src/top.v
