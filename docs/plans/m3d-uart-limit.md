@@ -344,7 +344,12 @@ honest negative result is stronger than an overstated positive one.
 | **4** | **13,500,000** | **1,350 kB/s** | **4045** | **0** | **0** | **0** | **0.000 %** | **CLEAN** |
 | **3** | **18,000,000** | 1,800 kB/s | **3** | **3482** | **404** | **168** | **99.92 %** | **FAILING** |
 
-**Link 1 is clean to 13,500,000 baud — 1,350,000 B/s — and collapses at 18,000,000.**
+**13,500,000 baud is the highest rate proven to work — 1,350,000 B/s. 18,000,000 fails.**
+
+Stated precisely: 13.5 Mbaud is the fastest rate this system could *test successfully*, not
+a measured breaking point. The true ceiling lies somewhere in `13.5 < ceiling <= 18`, and a
+54 MHz clock divided by an integer offers nothing between those two values, so the interval
+cannot be narrowed without changing the clock again.
 
 Six consecutive rates with **zero errors in over 24,000 frames**, then near-total failure:
 three intact frames out of 3889.
@@ -392,7 +397,7 @@ seventh.**
 
 | | measured limit | capacity | nature of the limit |
 |---|---|---|---|
-| **link 1** FPGA → ESP32 | **13.5 Mbaud** (fails at 18) | **1,350,000 B/s** | physical — bits stop resolving |
+| **link 1** FPGA → ESP32 | **13.5 Mbaud proven, 18 fails** | **1,350,000 B/s** | physical — bits stop resolving |
 | **link 2** ESP32 → host | **6 Mbaud** | **600,000 B/s** | software — macOS driver refuses to open the port |
 
 **The chain's end-to-end ceiling is 600,000 B/s, set by link 2, and link 1 has 2.25× more

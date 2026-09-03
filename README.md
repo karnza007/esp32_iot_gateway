@@ -4,10 +4,19 @@
 > it to a host PC through an ESP32-S3 gateway — first over **UART**, then over **SPI**,
 > so the two transports can be measured against each other under identical load.
 
-**Status:** **M1 done** — UART path verified end-to-end on hardware (30,120 B/s, real
-audio). **M2 built and simulated** — every frame now carries a sequence number, an
-overflow count and a checksum, so data loss is measured rather than guessed at; hardware
-bring-up of the new bitstream is the next step.
+**Status:** **M1–M3 complete.** The chain works, reports its own losses honestly, and both
+serial links have been characterised to their limits.
+
+| link | proven limit | capacity | nature of the limit |
+|------|--------------|----------|---------------------|
+| 1. FPGA → ESP32 | **13.5 Mbaud** (18 Mbaud fails) | 1,350,000 B/s | physical — bits stop resolving |
+| 2. ESP32 → host | **6 Mbaud** | 600,000 B/s | software — the macOS driver refuses to open the port |
+
+End-to-end ceiling **600,000 B/s**, set by link 2. Two INMP441s produce 190,063 B/s — 31.7 %
+of it — so **UART is not this project's bottleneck at audio rates**, and the case for SPI
+rests on headroom and scalability rather than a measured failure.
+
+Next: the ESP32-S3's **native USB**, which removes link 2's software cap entirely.
 
 ---
 
