@@ -47,7 +47,7 @@
 #define TARGET_UART0 0        // CH9102 bridge  -> /dev/cu.wchusbserial*
 #define TARGET_USB   1        // native USB     -> /dev/cu.usbmodem*
 
-constexpr int      BLAST_TARGET = TARGET_UART0;
+constexpr int      BLAST_TARGET = TARGET_USB;
 constexpr uint32_t UART0_BAUD   = 2000000;   // ignored when TARGET_USB
 constexpr size_t   CHUNK        = 512;       // bytes per write() call
 

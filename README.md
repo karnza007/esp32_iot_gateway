@@ -10,13 +10,17 @@ serial links have been characterised to their limits.
 | link | proven limit | capacity | nature of the limit |
 |------|--------------|----------|---------------------|
 | 1. FPGA → ESP32 | **13.5 Mbaud** (18 Mbaud fails) | 1,350,000 B/s | physical — bits stop resolving |
-| 2. ESP32 → host | **6 Mbaud** | 600,000 B/s | software — the macOS driver refuses to open the port |
+| 2. ESP32 → host, CH9102 | **6 Mbaud**, and lossy there | 579,875 B/s | software — the macOS driver refuses to open the port |
+| 2. ESP32 → host, **native USB** | none configured | **988,789 B/s** | not reached |
 
-End-to-end ceiling **600,000 B/s**, set by link 2. Two INMP441s produce 190,063 B/s — 31.7 %
-of it — so **UART is not this project's bottleneck at audio rates**, and the case for SPI
-rests on headroom and scalability rather than a measured failure.
+End-to-end ceiling **989,000 B/s** over native USB — 65 % better than the CH9102 path, for no
+hardware change, and the only transport of the three that lost nothing. Two INMP441s produce
+190,063 B/s, **19 % of it**; saturating it would take about eleven microphone channels.
 
-Next: the ESP32-S3's **native USB**, which removes link 2's software cap entirely.
+**So the transport is not this project's bottleneck at audio rates.** The case for SPI rests
+on headroom, channel count and cost-per-byte rather than a measured failure — because at
+audio rates neither UART nor USB failed. See
+[`docs/10-link2-transports.md`](docs/10-link2-transports.md).
 
 ---
 
@@ -188,6 +192,7 @@ Details in [`docs/04-roadmap.md`](docs/04-roadmap.md).
 - [`docs/07-bringup.md`](docs/07-bringup.md) — **how to program the board and run the null test**.
 - [`docs/08-troubleshooting.md`](docs/08-troubleshooting.md) — problems hit and fixes.
 - [`docs/09-results.md`](docs/09-results.md) — **every hardware run that produced a number.**
+- [`docs/10-link2-transports.md`](docs/10-link2-transports.md) — **CH9102 vs native USB, measured.**
 - [`docs/plans/m3-load-sweep.md`](docs/plans/m3-load-sweep.md) — **the load sweep: hypotheses, predictions, procedure.**
 - [`docs/plans/m3d-uart-limit.md`](docs/plans/m3d-uart-limit.md) — **how fast can the UART chain actually go?**
 - [`docs/plans/`](docs/plans/) — implementation and experiment plans (idea, hypothesis,
