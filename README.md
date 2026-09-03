@@ -34,11 +34,14 @@ measurements. The audio itself is the payload; the transport comparison is the r
 ## Signal chain
 
 ```
-┌───────────┐  I2S   ┌──────────────────┐  UART   ┌───────────┐  USB-CDC  ┌──────────┐
+┌───────────┐  I2S   ┌──────────────────┐ link 1  ┌───────────┐  link 2   ┌──────────┐
 │  INMP441  │ ─────▶ │  Tang Nano 4K    │ ──────▶ │ ESP32-S3  │ ────────▶ │  MacBook │
-│ MEMS mic  │ SCK    │  GW1NSR-4C       │ 2 Mbaud │  gateway  │  921600   │  viewer  │
-│  L/R→GND  │ WS  SD │  PLL 27→24 MHz   │  1 wire │ (pump)    │           │  Python  │
-└───────────┘        └──────────────────┘         └───────────┘           └──────────┘
+│ MEMS mic  │ SCK    │  GW1NSR-4C       │  UART   │  gateway  │  UART0 →  │  viewer  │
+│  L/R→GND  │ WS  SD │  PLL 27→54 MHz   │ 2 Mbaud │  (pump)   │  CH9102   │  Python  │
+└───────────┘        └──────────────────┘ 1 wire  └───────────┘  2 Mbaud  └──────────┘
+                                                        │
+                                                        └── native USB also present,
+                                                            not yet used for data
 ```
 
 | Stage    | Hardware                  | Role                                                  |
@@ -50,27 +53,34 @@ measurements. The audio itself is the payload; the transport comparison is the r
 
 ## How it works
 
-**Clocking.** A Gowin PLLVR turns the 27 MHz crystal into **24 MHz** (IDIV ÷9, FBDIV ×8).
-Everything else is an exact integer divide of that:
+**Clocking.** A Gowin PLLVR turns the 27 MHz crystal into **54 MHz** (IDIV ÷1, FBDIV ×2,
+ODIV 16). Everything else is an exact integer divide of that:
 
 ```
-fs   = 24 MHz / (64 × N)      BCLK = 24 MHz / N       UART = 24 MHz / 12 = 2 Mbaud
+fs = 54 MHz / (64 × N)     BCLK = 54 MHz / N     UART = 54 MHz / CLK_PER_BIT
 ```
 
-`N` is the only knob that sets the sample rate. `N = 25` gives the current 15.000 kHz.
+`N` (`BCLK_DIV`) is the only knob that sets the sample rate; `N = 56` gives the current
+15,067 Hz and `N = 18` the maximum 46,875 Hz (`BCLK` must stay under the INMP441's 3.2 MHz).
 Because it is a plain integer divide, **every** value of `N` is exact and jitter-free —
 "round" rates like 15 kHz have no accuracy advantage over 31.25 kHz.
+
+The clock was 24 MHz through M1-M3 and was raised to 54 MHz so that link 1 could be tested
+above 12 Mbaud; at 24 MHz the only rates available above 6 Mbaud were 8 and 12, which was too
+coarse to locate a ceiling. **The system clock travels to the host inside every frame**, so
+raising it cannot silently rescale a measurement.
 
 **Capture.** `i2s_master_rx.v` runs a textbook **64-BCLK I2S frame** (32 clocks per
 channel). It reads the **full 24-bit left-channel word** MSB-first, then keeps the top
 16 bits and discards the 8 LSBs. The capture window starts at `CAP_START = 2`, a value
 validated by simulation against known bit patterns.
 
-**Framing.** `framer.v` emits a 1036-byte frame per 512 samples: a 4-byte sync word, a
-6-byte header (`seq`, `ovf`, `cfg`), the payload, and a 2-byte checksum. Bytes go through
-a 64-byte FIFO that decouples the bursty producer from the steady UART drain — and every
-byte that FIFO has to discard is counted, so loss can never be silent. See
-[`docs/05-instrumentation.md`](docs/05-instrumentation.md).
+**Framing.** `framer.v` emits a **1038-byte** frame per 512 samples: a 4-byte sync word, an
+8-byte header (`seq`, `ovf`, `cfg`, and the header's own checksum), the payload, and a 2-byte
+payload checksum. Bytes go through a 64-byte FIFO that decouples the bursty producer from the
+steady UART drain — and every byte that FIFO has to discard is counted, so loss can never be
+silent. Framing bytes hold reserved space in that FIFO, so under overload the link sacrifices
+audio and stays measurable. See [`docs/05-instrumentation.md`](docs/05-instrumentation.md).
 
 **Transport.** `uart_tx.v` sends 8N1 at 2 Mbaud. The ESP32-S3 forwards bytes verbatim —
 frames already carry their own sync, so the gateway needs no protocol awareness.
@@ -80,22 +90,45 @@ frames already carry their own sync, so the gateway needs no protocol awareness.
 ```
 fpga/          Gowin EDA project (i2s_capture.gprj) and Verilog sources
   src/         i2s_master_rx.v, framer.v, uart_tx.v, top.v, top.cst, gowin_pllvr/
-  sim/         Icarus Verilog testbenches
+  sim/         Icarus Verilog testbenches; run_sims.sh runs them all
+  build.tcl    command-line synthesis + place & route (gw_sh)
 firmware/      Arduino sketches for the ESP32-S3 gateway
   reference/   earlier experiments kept for comparison
-host/          Python live viewer and analysis tools
-docs/          requirements, architecture, protocol, roadmap, plans, diary
+host/          inmp441_viewer.py — live viewer and link analyser
+docs/          glossary, requirements, architecture, protocol, results, plans, diary
 data/          measurement runs (CSV) — gitignored
-tools/         helper scripts
+tools/         summarize_run.py, probe_port.py, read_diag.py, sweep*.sh, split_runs.py
 ```
+
+## Tools
+
+| tool | what it does |
+|------|--------------|
+| `tools/summarize_run.py` | reduce a run CSV to the numbers that go in a report |
+| `tools/probe_port.py` | raw byte rate and sync-word presence, before any parsing |
+| `tools/read_diag.py` | read the gateway's own diagnostics; says which link failed |
+| `tools/sweep.sh` | build, program and capture one point per `BCLK_DIV` |
+| `tools/sweep_baud.sh` | same, sweeping link 2's baud instead |
+| `tools/sweep_link.sh` | find each link's top speed as an error rate |
+| `tools/split_runs.py` | repair a CSV that accidentally holds two runs |
+| `tools/test_viewer_parser.py` | offline test of the host parser, no hardware |
 
 ## Quick start
 
 **FPGA** — open `fpga/i2s_capture.gprj` in Gowin EDA, synthesize, place & route, program.
 
-**ESP32-S3** — open `firmware/fpga_uart_bridge/fpga_uart_bridge.ino` in the Arduino IDE.
-Board `ESP32S3 Dev Module`, **USB CDC On Boot: Disabled** (this board talks through a
-CH9102 bridge, so `Serial` is UART0), upload speed 921600.
+**ESP32-S3** — `firmware/fpga_uart_bridge/fpga_uart_bridge.ino`. Board `ESP32S3 Dev Module`,
+**USB CDC On Boot: Disabled** (so `Serial` is UART0 → the CH9102 bridge), upload speed 921600.
+
+From the command line, which is what the sweep scripts use:
+
+```
+arduino-cli compile --upload -b esp32:esp32:esp32s3 -p /dev/cu.wchusbserial... \
+            firmware/fpga_uart_bridge
+```
+
+`compile --upload`, never bare `upload` — `upload` alone re-flashes a cached binary and will
+silently ignore your edits.
 
 **Host**
 
@@ -125,14 +158,19 @@ python host/inmp441_viewer.py          # auto-detects the wchusbserial port
 ## Roadmap
 
 - **M1 — UART path (done).** Single channel, 15 kHz, 16-bit, live viewer.
-- **M2 — Instrumentation (built + simulated; hardware next).** Sequence numbers, FIFO
-  overflow counters, payload checksum, host-side drop/error statistics. See
-  [`docs/05-instrumentation.md`](docs/05-instrumentation.md) and
-  [`docs/07-bringup.md`](docs/07-bringup.md).
-- **M3 — Load sweep.** Add a second microphone; sweep `N` = 25 → 8 and record drop rate
-  and SNR/THD at each point until the UART link saturates.
-- **M4 — SPI transport.** Replace UART with SPI (FPGA master, ESP32-S3 DMA slave) and
-  re-run the identical sweep for a direct comparison.
+- **M2 — Instrumentation (done).** Sequence numbers, FIFO overflow counters, payload and
+  header checksums, host-side drop/error statistics, and a verdict naming the stage that lost
+  the data. Proven in all three states: silent when healthy, accurate when overloaded (0.5 %
+  error), silent again afterwards. See [`docs/05-instrumentation.md`](docs/05-instrumentation.md).
+- **M3 — Load sweep (done).** Three phases: raise demand at fixed capacity, lower capacity at
+  fixed demand, and characterise each link's top speed. The knee sits **exactly at capacity**
+  and failure is a cliff — 3 % over costs 30 % of the audio, 27 % over costs all of it.
+  See [`docs/09-results.md`](docs/09-results.md).
+- **M3-D — Link limits (done).** Link 1 proven to 13.5 Mbaud; link 2 capped at 6 Mbaud by the
+  macOS driver. See [`docs/plans/m3d-uart-limit.md`](docs/plans/m3d-uart-limit.md).
+- **M3-F — Native USB (next).** Measure the ESP32-S3's built-in USB against the CH9102 path,
+  to find the best route for link 2.
+- **M4 — SPI transport.** Replace UART with SPI and re-run the identical sweep.
 - **M5 — Wi-Fi.** Same frames over UDP, for the "gateway" half of the project.
 
 Details in [`docs/04-roadmap.md`](docs/04-roadmap.md).
