@@ -12,15 +12,19 @@ FRAME FORMAT v3 (1038 bytes, must match fpga/src/framer.v)
      10     2  hdrsum    uint16 LE, additive sum of bytes 4..9
      12  1024  payload   512 x int16 LE
    1036     2  checksum  uint16 LE, additive sum of the payload bytes
+                         (frame total = 1038 bytes)
 
 The header has its OWN checksum. The payload checksum does not cover it, because
 under saturation the payload is routinely destroyed while the header survives --
 and seq/ovf are most needed exactly then. Without hdrsum a corrupted header is
 undetectable, and a corrupt ovf value injects phantom overflow.
 
-The sample rate is not hardcoded: it is derived from `cfg` as
-    fs = 24 MHz / (64 * BCLK_DIV)
-so a sweep point can be changed in the Verilog alone and this program follows.
+Neither the sample rate NOR the system clock is hardcoded: both are derived from
+`cfg`, which carries the FPGA's own clock in bits 15:10, as
+    fs = SYS_CLK / (64 * BCLK_DIV)
+so a sweep point, or the clock itself, can change in the Verilog alone and this
+program follows. A hardcoded 24 MHz here would have silently reported every rate
+at 44 % of its true value when the FPGA moved to 54 MHz.
 
 HOW LOSS IS LOCALISED
     ovf > 0 and seq gaps   the FPGA FIFO overflowed -> the UART link is saturated
@@ -55,7 +59,7 @@ FRAME_SAMPLES = 512
 HEADER_BYTES = 12              # sync(4) + seq(2) + ovf(2) + cfg(2) + hdrsum(2)
 PAYLOAD_BYTES = FRAME_SAMPLES * 2
 TRAILER_BYTES = 2              # checksum
-FRAME_BYTES = HEADER_BYTES + PAYLOAD_BYTES + TRAILER_BYTES   # 1036
+FRAME_BYTES = HEADER_BYTES + PAYLOAD_BYTES + TRAILER_BYTES   # 1038
 BODY_BYTES = FRAME_BYTES - len(SYNC)                         # read after sync
 
 LINK1_BPS = 200_000            # FPGA -> ESP32 @ 2 Mbaud
@@ -146,7 +150,7 @@ def plausible_cfg(cfg: int) -> bool:
     bclk_div = cfg & 0xFF
     nch = (cfg >> 8) & 0x3
     reserved = cfg >> 10
-    # reserved is now the clock code: 0 (legacy 24 MHz) or 12 MHz units up to 252
+    # reserved is now the clock code: 0 (legacy 24 MHz), else 6 MHz units
     return 8 <= bclk_div <= 255 and 1 <= nch <= 2 and reserved in (0, 4, 8, 9, 16, 20)
 
 

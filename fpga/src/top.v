@@ -1,15 +1,15 @@
 // top.v — INMP441 -> FPGA (I2S capture) -> UART -> ESP32 -> host
 //
-//   27 MHz xtal --> PLL 24 MHz --> i2s_master_rx --> framer --> uart_tx --> ESP32
+//   27 MHz xtal --> PLL 54 MHz --> i2s_master_rx --> framer --> uart_tx --> ESP32
 //
-// Everything below the PLL is a synchronous integer divide of one 24 MHz clock,
+// Everything below the PLL is a synchronous integer divide of one 54 MHz clock,
 // so there is exactly one clock domain in the design. The datapath is held in
 // reset until the button is released AND the PLL reports lock, so it never runs
 // on an unstable clock.
 //
 // THE EXPERIMENT KNOBS LIVE HERE
-//   BCLK_DIV   sets the sample rate: fs = 24 MHz / (64 * BCLK_DIV)
-//   CLK_PER_BIT sets the UART baud:  baud = 24 MHz / CLK_PER_BIT
+//   BCLK_DIV   sets the sample rate: fs = SYS_CLK / (64 * BCLK_DIV)
+//   CLK_PER_BIT sets the UART baud:  baud = SYS_CLK / CLK_PER_BIT
 //   NUM_CH     number of microphone channels captured (1 today)
 //
 // Changing a sweep point is a one-line edit here. The values are also packed
@@ -23,8 +23,9 @@ module top_module #(
     // constant the host assumes. Three separate bugs in this project came from a
     // value written in one place and assumed in another; this closes the last one.
     parameter integer SYS_CLK_MHZ = 54,
-    // fs = 24 MHz / (64 * BCLK_DIV).  25:15.000k  20:18.750k  16:23.4375k
-    //                                  12:31.250k  10:37.500k   8:46.875k (max)
+    // fs = SYS_CLK / (64 * BCLK_DIV).  At 54 MHz:
+    //   56:15.067k  40:21.094k  28:30.134k  24:35.156k  20:42.188k  18:46.875k (max)
+    // BCLK = SYS_CLK / BCLK_DIV must stay <= 3.2 MHz (INMP441), so BCLK_DIV >= 17.
     parameter integer BCLK_DIV    = 56,
     parameter integer CLK_PER_BIT = 27,   // 54 MHz / 27 = 2,000,000 baud
     parameter integer NUM_CH      = 1     // channels captured per frame
@@ -37,7 +38,7 @@ module top_module #(
     output wire uart_tx,     // -> ESP32 RX      (pin 42)
     output wire lock_out     // PLL lock, debug  (pin 43)
 );
-    // ---- PLL: 27 -> 24 MHz (IDIV /9, FBDIV x8; verified on a scope) ----
+    // ---- PLL: 27 -> 54 MHz (IDIV /1, FBDIV x2, ODIV 16 -> VCO 864 MHz) ----
     wire clk24;
     wire pll_lock;
     Gowin_PLLVR your_instance_name(
