@@ -27,15 +27,15 @@ module top_module #(
     //   56:15.067k  40:21.094k  28:30.134k  24:35.156k  20:42.188k  18:46.875k (max)
     // BCLK = SYS_CLK / BCLK_DIV must stay <= 3.2 MHz (INMP441), so BCLK_DIV >= 17.
     parameter integer BCLK_DIV    = 56,
-    parameter integer CLK_PER_BIT = 27,   // 54 MHz / 27 = 2,000,000 baud
+    parameter integer CLK_PER_BIT = 27,
     parameter integer NUM_CH      = 1,    // channels captured per frame
     // Synthetic load. GEN_MODE=1 replaces the microphone with a counter at
     // fs = SYS_CLK / GEN_DIV, so the link can be driven to saturation -- audio
     // cannot: one INMP441 makes 95 kB/s against a 200 kB/s link. Everything
     // downstream is unchanged. GEN_DIV must be a multiple of 64 so the rate can be
     // reported through the existing BCLK_DIV field as GEN_DIV/64.
-    parameter integer GEN_MODE    = 0,
-    parameter integer GEN_DIV     = 3584  // 54 MHz / 3584 = 15,067 Hz, the audio rate
+    parameter integer GEN_MODE    = 1,
+    parameter integer GEN_DIV     = 576  // synthetic rate
 )(
     input  wire clk,         // 27 MHz crystal (pin 45)
     input  wire rst,         // active-low button (pressed = 0, pin 14)

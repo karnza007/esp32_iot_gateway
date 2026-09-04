@@ -250,3 +250,73 @@ receiver stall the sender instead of losing bytes. Those lines are not wired bet
 ESP32 and the CH9102 on this board, and the FPGA link does not use them either, so this was
 not testable here. The measured claim is therefore: *every UART configuration available to
 this project lost data; native USB did not.*
+
+---
+
+## CORRECTION (2026-09-03, later the same day)
+
+**The loss reported earlier in this document did not reproduce once the measuring tools were
+fixed. Two claims are withdrawn.**
+
+### What was claimed, and what is true
+
+| claimed earlier | actually |
+|---|---|
+| "no UART rate was lossless — 0.01 % floor at every rate" | **not reproducible.** Nine controlled runs, every rate, idle and under heavy load: lossless |
+| "USB CDC has back-pressure, so it cannot lose data" | one run lost 1.92 % in whole 64-byte packets; it did not recur under identical conditions |
+
+### Every controlled measurement, after the fixes
+
+| transport | rate | host | result |
+|---|---|---|---|
+| CH9102 | 92 kB/s | idle | LOSSLESS |
+| CH9102 | 200 kB/s | idle | LOSSLESS |
+| CH9102 | 390 kB/s | idle | LOSSLESS |
+| native USB | 962 kB/s | idle | LOSSLESS |
+| CH9102 | 200 kB/s | **heavy load** | LOSSLESS |
+| CH9102 | 390 kB/s | **heavy load** | LOSSLESS |
+| native USB | 441 kB/s | **heavy load** | LOSSLESS |
+| native USB | 962 kB/s | **heavy load** | **LOSSY 1.92 %** |
+| native USB | 962 kB/s | **heavy load** | LOSSLESS — same test, repeated |
+
+**One lossy run in nine, unexplained and unreproduced.**
+
+### The three tool bugs that manufactured the original result
+
+Each produced a plausible-looking number rather than an error:
+
+| bug | what it did | only visible when |
+|---|---|---|
+| counter wrapped at 251 | a 256- or 512-byte loss read as continuous; real losses mis-sized | losses were multiples of 251 |
+| 16-bit counter, no alignment | reading one byte late made every step look like a 510-byte loss — reported 99.6 % corrupt | the byte phase happened to be odd |
+| zero bytes scored as `LOSSLESS` | a completely dead link reported perfect | the link carried nothing at all |
+
+Compounding them, the early runs reflashed the ESP32 between every point and ran while the
+machine was compiling bitstreams — so the host was heavily loaded during the very
+measurements used to characterise the link.
+
+**A measuring instrument that fails loudly is harmless. These failed quietly, with numbers
+that looked like results.** The same shape as the 111 % corruption figure in M3-D §10 and the
+`resyncs` counter in M2: a metric only exercised by success is not tested by success.
+
+### What survives
+
+> With corrected tooling, every transport tested was lossless in 30-second runs, at every
+> usable rate, idle and under heavy host load.
+
+**Transports here differ in capacity, not in reliability.** At this project's data rates —
+30 kB/s today, 190 kB/s with two microphones — loss is not a differentiator and should not be
+used as one.
+
+### The decision stands, on different grounds
+
+Native USB remains the right choice for link 2, for the reasons that held up:
+
+- **2.5× the throughput** — 962 kB/s against the CH9102's best usable 390 kB/s
+- **no baud rate to keep synchronised** between two files, a trap that cost this project two
+  debugging sessions
+- **only rates of 12 MHz ÷ an integer work on the CH9102**, and the driver reports success at
+  the others — a genuine hazard, independently confirmed
+- **one less chip in the path**
+
+Not "because UART loses data". That claim did not survive contact with a corrected instrument.

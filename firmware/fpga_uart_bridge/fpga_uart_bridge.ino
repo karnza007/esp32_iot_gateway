@@ -17,7 +17,7 @@
 // ---------------------------------------------------------------- configuration
 constexpr int      FPGA_RX_PIN = 18;        // ESP32-S3 GPIO <- FPGA UART TX (pin 42)
 constexpr int      FPGA_TX_PIN = 17;        // unused (no data back to the FPGA)
-constexpr uint32_t FPGA_BAUD   = 2000000;   // link 1: must match SYS_CLK_MHZ / CLK_PER_BIT in top.v
+constexpr uint32_t FPGA_BAUD   = 2000000;
 constexpr uint32_t HOST_BAUD   = 2000000;   // link 2, CH9102 path only; USB has no baud
 
 // Link 2 transport. Measured 2026-09-03 (docs/10-link2-transports.md):
