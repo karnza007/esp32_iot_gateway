@@ -28,7 +28,14 @@ module top_module #(
     // BCLK = SYS_CLK / BCLK_DIV must stay <= 3.2 MHz (INMP441), so BCLK_DIV >= 17.
     parameter integer BCLK_DIV    = 56,
     parameter integer CLK_PER_BIT = 27,   // 54 MHz / 27 = 2,000,000 baud
-    parameter integer NUM_CH      = 1     // channels captured per frame
+    parameter integer NUM_CH      = 1,    // channels captured per frame
+    // Synthetic load. GEN_MODE=1 replaces the microphone with a counter at
+    // fs = SYS_CLK / GEN_DIV, so the link can be driven to saturation -- audio
+    // cannot: one INMP441 makes 95 kB/s against a 200 kB/s link. Everything
+    // downstream is unchanged. GEN_DIV must be a multiple of 64 so the rate can be
+    // reported through the existing BCLK_DIV field as GEN_DIV/64.
+    parameter integer GEN_MODE    = 0,
+    parameter integer GEN_DIV     = 3584  // 54 MHz / 3584 = 15,067 Hz, the audio rate
 )(
     input  wire clk,         // 27 MHz crystal (pin 45)
     input  wire rst,         // active-low button (pressed = 0, pin 14)
@@ -54,25 +61,42 @@ module top_module #(
 
     // ---- configuration word echoed in every frame header ----
     //   [7:0]   BCLK_DIV   host computes fs = SYS_CLK / (64 * BCLK_DIV)
-    //   [9:8]   NUM_CH
+    //   [9:8]   NUM_CH, or 3 = "payload is a counter, not audio"
     //   [15:10] clock code = SYS_CLK_MHZ / 6    (24 -> 4, 54 -> 9, 96 -> 16)
     //                        0 means "legacy bitstream, assume 24 MHz"
     //   6 MHz units, not 12: 54 MHz is not a multiple of 12, and picking the
     //   coarser unit first would have silently reported 48 MHz for a 54 MHz build.
     localparam [5:0] CLK_CODE = SYS_CLK_MHZ / 6;
-    wire [15:0] cfg = {CLK_CODE, NUM_CH[1:0], BCLK_DIV[7:0]};
+    // In synthetic mode the channel field carries 3 -- a value no real microphone
+    // configuration produces -- so the host knows to verify the payload as a
+    // counter rather than plot it as audio. The rate field carries GEN_DIV/64, so
+    // the host's fs formula still yields the true sample rate.
+    localparam [1:0] CH_CODE   = (GEN_MODE != 0) ? 2'd3 : NUM_CH[1:0];
+    localparam [7:0] RATE_CODE = (GEN_MODE != 0) ? (GEN_DIV/64) : BCLK_DIV[7:0];
+    wire [15:0] cfg = {CLK_CODE, CH_CODE, RATE_CODE};
 
     // ---- I2S capture ----
-    wire [15:0] sample;
-    wire        sample_valid;
+    wire [15:0] mic_sample;
+    wire        mic_valid;
     i2s_master_rx #(
         .BCLK_DIV  (BCLK_DIV),
         .CAP_START (2)
     ) u_i2s (
         .clk(clk24), .rst_n(rst_n),
         .i2s_sck(i2s_sck), .i2s_ws(i2s_ws), .i2s_sd(i2s_sd),
-        .sample(sample), .sample_valid(sample_valid)
+        .sample(mic_sample), .sample_valid(mic_valid)
     );
+
+    // ---- synthetic source, for driving the link to saturation ----
+    wire [15:0] gen_sample;
+    wire        gen_valid;
+    sample_gen #(.GEN_DIV(GEN_DIV)) u_gen (
+        .clk(clk24), .rst_n(rst_n),
+        .sample(gen_sample), .sample_valid(gen_valid)
+    );
+
+    wire [15:0] sample       = (GEN_MODE != 0) ? gen_sample : mic_sample;
+    wire        sample_valid = (GEN_MODE != 0) ? gen_valid  : mic_valid;
 
     // ---- framing + loss instrumentation ----
     wire [7:0] tx_data;

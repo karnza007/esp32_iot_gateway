@@ -141,6 +141,20 @@ def main() -> int:
         c.eq(name, (V.clock_from_cfg(cfgv), V.sample_rate_from_cfg(cfgv)),
              (want_clk, want_fs))
 
+    # ---- 6: synthetic payload, with a deliberate sample-level gap --------------
+    c.section("synthetic counter payload")
+    SCFG = (9 << 10) | (SYN := 3) << 8 | 56          # 54 MHz, ch=3 (synthetic)
+    def synth(seq, first):
+        vals = ((np.arange(512) + first) & 0xFFFF).astype("<u2")
+        return frame(seq, 0, SCFG, vals.view("<i2"))
+    # frame 0 ends at sample 511; frame 1 should start at 512. Start it at 600
+    # instead, i.e. 88 samples vanished between frames.
+    r, t6 = run(synth(0, 0) + synth(1, 600))
+    c.eq("is_synthetic", V.is_synthetic(SCFG), True)
+    c.eq("frames_ok", t6.frames_ok, 2)
+    c.eq("samples_lost", t6.samples_lost, 88)
+    c.eq("sample_breaks", t6.sample_breaks, 1)
+
     print("\nPASS" if c.failures == 0 else f"\nFAIL ({c.failures})")
     return 0 if c.failures == 0 else 1
 

@@ -22,6 +22,12 @@ SYS_MHZ=${SYS_MHZ:-54}
 DIVS=${DIVS:-"56 40 28 24 20 18"}
 fail=0
 
+echo "=== tb_gen ==="
+iverilog -g2012 -o "$OUT/tb_gen" "$SIM/tb_gen.v" "$SRC/sample_gen.v" || fail=1
+vvp "$OUT/tb_gen" | grep -v '^VCD info' || fail=1
+vvp "$OUT/tb_gen" | grep -q 'tb_gen: PASS' || fail=1
+
+echo
 echo "=== tb_framer ==="
 iverilog -g2012 -o "$OUT/tb_framer" "$SIM/tb_framer.v" "$SRC/framer.v" || fail=1
 vvp "$OUT/tb_framer" | grep -v '^VCD info' || fail=1

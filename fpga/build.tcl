@@ -4,6 +4,7 @@
 set_device -name GW1NSR-4C GW1NSR-LV4CQN48PC6/I5
 add_file src/gowin_pllvr/gowin_pllvr.v
 add_file src/i2s_master_rx.v
+add_file src/sample_gen.v
 add_file src/framer.v
 add_file src/uart_tx.v
 add_file src/top.v

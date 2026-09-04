@@ -126,8 +126,22 @@ def sample_rate_from_cfg(cfg: int) -> float:
     return clock_from_cfg(cfg) / (BCLK_PER_FRAME * bclk_div)
 
 
+SYNTHETIC_CH_CODE = 3      # cfg[9:8] == 3 -> payload is a counter, not audio
+
+
 def channels_from_cfg(cfg: int) -> int:
     return (cfg >> 8) & 0x3
+
+
+def is_synthetic(cfg: int) -> bool:
+    """Payload is a 16-bit counter from sample_gen.v, not microphone audio.
+
+    A real configuration has 1 or 2 channels, so 3 is free to mean this. It lets
+    the host check every sample against the last ACROSS frame boundaries, which is
+    a third loss measurement independent of `seq` (whole frames) and `ovf` (bytes
+    dropped inside the FPGA), and finer-grained than either.
+    """
+    return channels_from_cfg(cfg) == SYNTHETIC_CH_CODE
 
 
 def interpolate_peak(mag, k: int) -> float:
@@ -162,7 +176,7 @@ def plausible_cfg(cfg: int) -> bool:
     nch = (cfg >> 8) & 0x3
     reserved = cfg >> 10
     # reserved is now the clock code: 0 (legacy 24 MHz), else 6 MHz units
-    return 8 <= bclk_div <= 255 and 1 <= nch <= 2 and reserved in (0, 4, 8, 9, 16, 20)
+    return 1 <= bclk_div <= 255 and 1 <= nch <= 3 and reserved in (0, 4, 8, 9, 16, 20)
 
 
 # ---------------------------------------------------------------- statistics
@@ -177,6 +191,8 @@ class LinkStats:
     resync_events: int = 0          # times the stream had to be re-found
     bytes_skipped: int = 0          # garbage bytes discarded while re-finding it
     header_errors: int = 0          # frames whose HEADER failed its own checksum
+    samples_lost: int = 0           # synthetic mode: gaps in the payload counter
+    sample_breaks: int = 0          # how many such gaps
     frames_short: int = 0           # frames that arrived with bytes missing
     bytes_missing: int = 0          # how many bytes those frames were missing
     payload_bytes: int = 0          # audio bytes delivered
@@ -193,6 +209,8 @@ class LinkStats:
         self.resync_events = 0
         self.bytes_skipped = 0
         self.header_errors = 0
+        self.samples_lost = 0
+        self.sample_breaks = 0
         self.frames_short = 0
         self.bytes_missing = 0
         self.payload_bytes = 0
@@ -262,6 +280,7 @@ class FrameReader:
         self._last_ovf: int | None = None
         self._ovf_accum: int = 0        # our own total; the wire field wraps at 65536
         self._hdr_err_run: int = 0      # header-corrupt frames since the last good one
+        self._last_sample: int | None = None   # synthetic mode: payload counter
         self.frames_seen_any = 0        # sync matched + full body read, intact or not
 
     # -- lifecycle ---------------------------------------------------------
@@ -293,15 +312,15 @@ class FrameReader:
             iv = LinkStats(**{k: getattr(self.stats, k) for k in
                               ("frames_ok", "frames_expected", "frames_lost",
                                "checksum_errors", "resync_events", "bytes_skipped",
-                               "header_errors", "frames_short", "bytes_missing",
-                               "payload_bytes", "wire_bytes", "ovf_delta", "ovf_total")})
+                               "header_errors", "samples_lost", "sample_breaks",
+                               "frames_short", "bytes_missing", "payload_bytes", "wire_bytes", "ovf_delta", "ovf_total")})
             iv.t_start = self.stats.t_start
             self.stats.reset_interval()
             tot = LinkStats(**{k: getattr(self.total, k) for k in
                                ("frames_ok", "frames_expected", "frames_lost",
                                 "checksum_errors", "resync_events", "bytes_skipped",
-                                "header_errors", "frames_short", "bytes_missing",
-                                "payload_bytes", "wire_bytes", "ovf_delta", "ovf_total")})
+                                "header_errors", "samples_lost", "sample_breaks",
+                                "frames_short", "bytes_missing", "payload_bytes", "wire_bytes", "ovf_delta", "ovf_total")})
             tot.t_start = self.total.t_start
         return iv, tot
 
@@ -400,6 +419,28 @@ class FrameReader:
             payload = frame[HEADER_BYTES:HEADER_BYTES + PAYLOAD_BYTES]
             want = int.from_bytes(frame[HEADER_BYTES + PAYLOAD_BYTES:], "little")
             good = (sum(payload) & 0xFFFF) == want
+            if good and is_synthetic(cfg):
+                # The payload is a counter. Check it runs unbroken from the last
+                # sample of the previous frame through this one -- finer than seq,
+                # and it catches loss inside a frame that still checksums (it
+                # cannot, but the cross-check is the point).
+                vals = np.frombuffer(payload, dtype="<u2")
+                with self._lock:
+                    if self._last_sample is not None:
+                        d = int((int(vals[0]) - self._last_sample - 1) & 0xFFFF)
+                        if 0 < d < 40000:
+                            for st in (self.stats, self.total):
+                                st.samples_lost += d
+                                st.sample_breaks += 1
+                    steps = (vals[1:].astype(np.int32) - vals[:-1].astype(np.int32)) & 0xFFFF
+                    bad = np.nonzero(steps != 1)[0]
+                    if bad.size:
+                        extra = int(np.sum((steps[bad] - 1) & 0xFFFF))
+                        for st in (self.stats, self.total):
+                            st.samples_lost += extra
+                            st.sample_breaks += int(bad.size)
+                    self._last_sample = int(vals[-1])
+
             if good:
                 samples = np.frombuffer(payload, dtype="<i2")
                 with self._lock:
@@ -469,7 +510,8 @@ class FrameReader:
 # ---------------------------------------------------------------- reporting
 CSV_FIELDS = ["t", "link2_baud", "bclk_div", "channels",
               "frames_ok", "frames_lost", "drop_rate", "ovf_delta", "ovf_total",
-              "checksum_errors", "header_errors", "frames_short", "bytes_missing",
+              "checksum_errors", "header_errors", "samples_lost", "sample_breaks",
+              "frames_short", "bytes_missing",
               "resync_events", "bytes_skipped", "payload_Bps", "wire_Bps", "verdict"]
 
 
@@ -487,6 +529,8 @@ def csv_row(iv: LinkStats, t: float, link2_baud: int = 0,
         "ovf_total": iv.ovf_total,
         "checksum_errors": iv.checksum_errors,
         "header_errors": iv.header_errors,
+        "samples_lost": iv.samples_lost,
+        "sample_breaks": iv.sample_breaks,
         "frames_short": iv.frames_short,
         "bytes_missing": iv.bytes_missing,
         "resync_events": iv.resync_events,
@@ -501,7 +545,7 @@ def format_line(iv: LinkStats, fs: float) -> str:
     return (f"{iv.frames_ok:4d} ok  {iv.frames_lost:4d} lost "
             f"({100*iv.drop_rate:6.2f}%)  ovf {iv.ovf_delta:5d} "
             f"(tot {iv.ovf_total:5d})  cksum {iv.checksum_errors:3d}  "
-            f"hdrerr {iv.header_errors:3d}  short {iv.frames_short:3d}({iv.bytes_missing:6d}B)  "
+            f"hdrerr {iv.header_errors:3d}  smp {iv.samples_lost:6d}  "
             f"wire {iv.wire_throughput/1000:7.2f} kB/s  [{iv.verdict()}]")
 
 
