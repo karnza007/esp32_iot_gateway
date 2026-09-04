@@ -47,6 +47,9 @@ Wire rate for one channel: `fs / 512 × 1036` B/s.
 | `m3-B-div10.csv` | 44 | 3236 | 0 | 0.00 | 0 | 0 | 0 | 76,032 | 82 | OK |
 | `m3-B-div8.csv` | 59 | 3772 | 319 | 5.88 | 1335 | **0** | 1016 | 66,082 | 103 | **GATEWAY LOSS (ESP32/USB)** |
 | `m3e-54MHz-null.csv` | 44 | 1303 | 0 | 0.00 | 0 | 0 | 0 | 30,557 | 15 | OK |
+| `m3f-nativeusb-null.csv` | 44 | 1302 | 0 | 0.00 | 0 | 0 | 0 | 30,578 | 3 | OK |
+| `m3g-link1-gen576.csv` (95 % of link 1) | 45 | 8090 | 0 | 0.00 | 0 | 0 | 0 | 190,067 | 20 | OK |
+| `m3g-link1-gen512.csv` (107 % of link 1) | 45 | 0 | 0 | 0.00 | 9100 | 643,178 | 9100 | 0 | 0 | **LINK SATURATED (FPGA FIFO)** |
 
 ---
 
@@ -535,3 +538,76 @@ why the plan called for running it both ways rather than either alone.
 
 `ovf = 0` at every single point. Link 1 never exceeded 47.5 %, and the FPGA discarded nothing
 in any of the nine runs.
+---
+
+## M3-G — link 1 driven to saturation with a synthetic load
+
+**2026-09-03** · link 1 at 2 Mbaud (200,000 B/s), link 2 on native USB (962 kB/s, 4–19×
+headroom throughout), payload = a 16-bit counter from `sample_gen.v`, 45 s per point, idle
+machine · raw: `data/m3g-link1-gen*.csv`
+
+**The question.** Every earlier link-1 measurement ran at ~7 % load. That proved the bits
+survive at high baud rates. It never asked whether link 1 **leaks when it is actually full**
+— which is what link 2 appeared to do before the measuring tools were corrected. Audio
+cannot ask the question: one INMP441 makes 95 kB/s against a 200 kB/s link, and two make 190.
+
+| offered | % of link 1 | frames intact | frames lost | bad payload | `ovf` | delivered | verdict |
+|---|---|---|---|---|---|---|---|
+| 50,311 B/s | 25 % | 2139 | 0 | 0 | 0 | 50,259 | OK |
+| 100,622 B/s | 50 % | 4285 | 0 | 0 | 0 | 100,634 | OK |
+| 155,506 B/s | 78 % | 6618 | 0 | 0 | 0 | 155,457 | OK |
+| 171,057 B/s | 86 % | 7281 | 0 | 0 | 0 | 171,004 | OK |
+| **190,063 B/s** | **95 %** | **8090** | **0** | **0** | **0** | **190,067** | **OK** |
+| 213,821 B/s | 107 % | **0** | 0 | 9100 | 643,178 | **0** | **LINK SATURATED (FPGA FIFO)** |
+| 244,367 B/s | 122 % | 0 | 0 | 10,399 | 1,992,387 | 0 | LINK SATURATED (FPGA FIFO) |
+| 342,114 B/s | 171 % | 0 | 0 | 14,566 | 6,313,259 | 0 | LINK SATURATED (FPGA FIFO) |
+
+### Link 1 does not leak
+
+**Zero loss at every point up to 95 % of capacity**, across 28,413 frames, on a link running
+at 13× the load any previous link-1 test had applied. Delivered matched offered to within
+0.1 % at every clean point.
+
+That answers the question this experiment was built for: **link 1 has no loss floor.** The
+apparent floor on link 2 was an artefact of the measuring tools, and there is no equivalent
+here.
+
+### The knee is at capacity, and the collapse is total
+
+| offered | delivered |
+|---|---|
+| 95 % of capacity | **100 % of it** |
+| 107 % of capacity | **0** |
+
+Not a slope. At 95 % every frame arrives intact; at 107 % **not one does**. A frame missing a
+single byte fails its checksum and is discarded whole, so a 7 % overload destroys 100 % of the
+payload. This reproduces the M3-C result — measured then by lowering capacity, now by raising
+demand, with a generated load instead of audio.
+
+### `ovf` matches the arithmetic
+
+| offered | shortfall × 45 s | `ovf` measured | error |
+|---|---|---|---|
+| 213,821 B/s | 621,945 | 643,178 | 3.4 % |
+| 244,367 B/s | 1,996,515 | **1,992,387** | **0.2 %** |
+| 342,114 B/s | 6,395,130 | 6,313,259 | 1.3 % |
+
+An FPGA counting its own discarded bytes, against arithmetic on rates we chose. Two
+independent things agreeing to within a few percent.
+
+### `frames_lost = 0` even at 171 % overload
+
+Worth noticing. At 171 % the link is delivering no usable audio at all — and **not one frame
+header went missing.** Every `seq` arrived in order.
+
+That is the M2 header-reservation fix working exactly as designed: framing bytes hold
+priority in the FIFO, so under overload the link **sacrifices audio and stays measurable**.
+Before that fix, the same condition produced zero sync words in five seconds and the loss was
+invisible.
+
+### One limitation
+
+`samples lost` reads 0 at the saturated points. The counter check only runs on
+checksum-valid frames, and at saturation there are none — so the finest-grained detector goes
+blind precisely when loss is heaviest. `ovf` and `bytes_missing` cover that range. Worth
+knowing rather than fixing: a per-frame check cannot work on frames that do not survive.

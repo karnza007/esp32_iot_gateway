@@ -35,7 +35,7 @@ module top_module #(
     // downstream is unchanged. GEN_DIV must be a multiple of 64 so the rate can be
     // reported through the existing BCLK_DIV field as GEN_DIV/64.
     parameter integer GEN_MODE    = 1,
-    parameter integer GEN_DIV     = 576  // synthetic rate
+    parameter integer GEN_DIV     = 320  // synthetic rate
 )(
     input  wire clk,         // 27 MHz crystal (pin 45)
     input  wire rst,         // active-low button (pressed = 0, pin 14)
