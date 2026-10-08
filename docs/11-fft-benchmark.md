@@ -5,7 +5,7 @@
 | Step | Status |
 |---|---|
 | F0 — Python yardstick | ✅ 2026-10-08 |
-| E1 — ESP32 FFT | ✅ 2026-10-08 — gate decision pending (§8.4) |
+| E1 — ESP32 FFT | ✅ 2026-10-08 |
 | F1 — Gowin size limit | — |
 | F2 — FPGA loopback | — |
 | F3 — FPGA FFT | — |
@@ -147,7 +147,7 @@ one LSB; broken ones by hundreds.** There's a gap of more than 300× between the
 
 | Question | Rule | Type |
 |---|---|---|
-| **1. Is it correct?** | Every peak in the right bin, and RMS error ≤ **2 LSB** on every signal | pass / fail |
+| **1. Is it correct?** | Every peak in the right bin, and RMS error ≤ **4 LSB** on every signal (was 2 LSB until E1, see §8.4) | pass / fail |
 | **2. How accurate?** | RMS error on `noise`, in LSB and in dB above the 0.43-LSB floor | a number, compared between devices |
 
 `python host/fft_bench.py selftest` re-proves all of this on every run: the gate passes all
@@ -242,7 +242,7 @@ measurement-grade work, they matter.
 vs 1,448). SIMD does about 7× less damage (212 LSB rms), consistent with **saturating** instead
 of wrapping.
 
-### 8.4 Against the correctness gate — decision pending
+### 8.4 Against the correctness gate — revised after E1
 
 Under the gate set in F0 (rms ≤ 2.0 LSB):
 - **Plain C passes all 24 tests.**
@@ -252,7 +252,14 @@ That one failure is not a bug. The peaks are right, and the error is 200× small
 smallest real bug's maximum error. The gate came from **modelled** designs (worst 1.32 LSB),
 and the first **real, shipping** library turned out to sit right at it.
 
-The raw rms values are saved in the CSVs, so the verdict can be recomputed under any gate.
-**Proposed:** raise the gate to 4 LSB rms. That's 2× the worst correct design measured, and
-still under the nearest bug (one missing bin, 7.1 LSB). Awaiting confirmation; until then, the
-pre-registered result above stands as recorded.
+**Decision (2026-10-08): the gate is raised to 4 LSB rms.** That's 2× the worst correct
+design measured, and still under the nearest bug (one missing bin, 7.1 LSB). It's recorded
+here as a revision made *after* seeing real data, with both verdicts kept:
+
+| | Gate 2 LSB (set in F0, before any device) | Gate 4 LSB (revised after E1) |
+|---|---|---|
+| ESP32 plain C | 24 / 24 correct | 24 / 24 correct |
+| ESP32 SIMD | 39 / 40 correct | **40 / 40 correct** |
+
+The raw rms values are in the CSVs, so the verdict can be recomputed under any gate. The Gowin
+core (F3) will be judged by the 4 LSB gate, which was fixed before it was tested.

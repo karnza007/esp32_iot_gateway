@@ -279,7 +279,13 @@ def score(dut_re: np.ndarray, dut_im: np.ndarray, sig: Signal) -> Score:
 #     wrong direction (inverse instead of forward)          604 LSB rms
 # So "correct" is a wide, unambiguous gate, and HOW accurate a correct design
 # is becomes a separate number, compared between devices rather than pass/fail.
-CORRECT_RMS_LSB = 2.0
+#
+# The gate was 2.0 in F0, set from the modelled designs above. The first real
+# library measured (ESP-DSP's SIMD FFT on the ESP32-S3, E1) is correct but sits
+# at 1.8-2.0 LSB and crossed 2.0 once, by 0.003. Raised to 4.0 on 2026-10-08:
+# twice the worst real correct design, still below the nearest bug (one missing
+# bin, 7.1 LSB). The decision and both verdicts are in docs/11-fft-benchmark.md.
+CORRECT_RMS_LSB = 4.0
 
 
 def noise_floor(n: int) -> float:

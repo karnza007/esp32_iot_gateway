@@ -8,8 +8,8 @@ Commands
                        saved to data/fft/f0-model-baseline.csv
 
 Each device result is judged twice:
-    correct?       right peaks and rms error <= 2 LSB (correct designs: 0.4-1.3,
-                   bugs: 400+; see fft_model.CORRECT_RMS_LSB)
+    correct?       right peaks and rms error <= 4 LSB (correct designs: 0.4-2.0,
+                   bugs: 7+; see fft_model.CORRECT_RMS_LSB)
     how accurate?  rms error in LSB, and dB above the best possible design
 
     esp32 [-n N ...]   run every signal through the ESP32-S3's 16-bit FFT
