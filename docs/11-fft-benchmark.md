@@ -170,7 +170,11 @@ python fft_bench.py selftest            # must print ALL PASS before any device 
 python fft_bench.py model               # the ceiling table -> data/fft/f0-model-baseline.csv
 python fft_bench.py esp32               # ESP32 SIMD FFT    -> data/fft/e1-esp32-simd.csv
 python fft_bench.py esp32 --impl ansi   # ESP32 plain-C FFT -> data/fft/e1-esp32-ansi.csv
+python fft_bench.py fpga-echo           # F2 data path via the FPGA -> data/fft/f2-fpga-echo.csv
 ```
+
+FPGA (Tang Nano 20K): `fpga_fft/build.sh program` builds `fpga_fft/` from the command line and
+loads it into the FPGA's SRAM (lost at power-off; re-run after unplugging).
 
 ESP32 firmware: `firmware/fft_bench` (flash with `arduino-cli compile --upload -b
 esp32:esp32:esp32s3:CDCOnBoot=cdc -p /dev/cu.wchusbserial* firmware/fft_bench`).
@@ -437,3 +441,60 @@ cd fpga_fft/sizing
 ./try_variant.sh reg16   REG_MEMORY 16 4       # -> fits, Fmax 44.3 MHz
 ```
 
+
+## 10. F2 — the data path to the FPGA, proven with an echo (Tang Nano 20K)
+
+**Why first:** before trusting any FFT result from the FPGA, the path that carries the signal
+there and back must be shown to lose nothing. Otherwise a wrong spectrum could be a transport
+fault, not a core fault. So the FPGA first just **echoes** the signal: no FFT, same path.
+
+### 10.1 The setup
+
+```
+ Mac ──USB, 2 Mbaud──▶ ESP32-S3 ──GPIO17 → pin 27, 1 Mbaud──▶ Tang Nano 20K
+     (host/fft_bench.py)  (firmware/fft_bench, cmd 'E')          (fpga_fft/src/top.v)
+ Mac ◀──────────────── ESP32-S3 ◀──GPIO18 ← pin 28 ────────────── uart_rx → RAM → uart_tx
+                                   + GND ↔ GND, no power wire between boards
+```
+
+| Setting | Value |
+|---|---|
+| FPGA | GW2AR-LV18QN88C8/I7 (Tang Nano 20K), 27 MHz crystal on pin 4, no PLL |
+| ESP32 ↔ FPGA | UART 8N1, **1 Mbaud** = 27 MHz ÷ 27, exact on both sides (ESP32: 80 MHz ÷ 80) |
+| Frame | `A5 5A cmd` + 4096 bytes (1024 points × re, im int16) → `5A A5 status cycles rx_sum` + 4096 bytes + `tx_sum` |
+| FPGA design | `uart_rx` (new) → frame engine → 1024×32 block RAM → `uart_tx` (reused from the audio design) |
+| Build | `fpga_fft/build.sh program` (command line; same as Synthesize + Place & Route + Program in the IDE) |
+
+**Two checksums, two directions.** The FPGA reports the byte sum of what it *received*
+(`rx_sum`) as well as of what it *sent* (`tx_sum`). The ESP32 checks both, so a fault can be
+placed on the inbound wire (status 6) or the outbound wire (status 7), not just "somewhere".
+A frame that stops for 1 ms mid-way is dropped by the FPGA (LED 2 records it), so one lost
+byte can't misalign every frame after it.
+
+### 10.2 Resources and timing (echo design, place & route report)
+
+| Logic | Registers | BSRAM | DSP | Fmax (constraint 27 MHz) |
+|---|---|---|---|---|
+| 318 / 20,736 (2 %) | 229 / 15,750 (2 %) | 2 / 46 (2 × SDPB, the 1024×32 buffer) | 0 | 147.6 MHz, no setup/hold violations |
+
+One warning stays: `PR1014`. The 20K's crystal is wired to pin 4, a PLL input rather than a
+dedicated global-clock pin, so the clock reaches the global network over general routing. At
+27 MHz the timing report shows positive setup and hold slack, so it is harmless here.
+
+### 10.3 Result: PASS
+
+`python fft_bench.py fpga-echo -r 50`: 13 payloads × 50 frames.
+
+| Payloads | Frames back byte for byte | Byte errors | Round trip (ESP32 → FPGA → ESP32) |
+|---|---|---|---|
+| The 9 test signals (incl. overload) + random bytes, sync bytes `A5 5A` repeated, all `0x00`, all `0xFF` | **650 / 650** | **0** (of 2.66 M bytes each way) | **82.4 ms**, against 82.1 ms of pure wire time |
+
+- The raw patterns cover every byte value, and a payload made entirely of the FPGA's own sync
+  bytes. That proves the frame engine counts bytes rather than hunting for markers mid-frame.
+- Round trip ≈ wire time: neither side leaves gaps. The UART is the whole cost: 41 ms each way
+  at 1 Mbaud. That's why the FFT time in F3 is measured **inside** the FPGA by a cycle counter,
+  not from the outside.
+- The ESP32's own FFT commands still give the E1 numbers after the protocol change (noise
+  1.821 LSB, 65.1 µs), so nothing regressed.
+
+**So in F3, any error in the spectrum belongs to the FFT core, not to the transport.**

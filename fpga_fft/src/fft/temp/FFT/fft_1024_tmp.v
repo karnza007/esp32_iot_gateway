@@ -2,9 +2,10 @@
 //All rights reserved.
 //File Title: Template file for instantiation
 //Tool Version: V1.9.11.03 Education
-//Part Number: GW1NSR-LV4CQN48PC6/I5
-//Device: GW1NSR-4C
-//Created Time: Thu Oct  8 14:38:40 2026
+//Part Number: GW2AR-LV18QN88C8/I7
+//Device: GW2AR-18
+//Device Version: C
+//Created Time: Thu Oct  8 17:02:10 2026
 
 //Change the instance name and port connections to the signal names
 //--------Copy here to design--------

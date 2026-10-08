@@ -17,6 +17,10 @@ Each device result is judged twice:
                        saved to data/fft/e1-esp32-<impl>.csv
                        --impl simd (default, the fast one) | ansi (plain C)
 
+    fpga-echo [-r R]   F2: every test signal (plus raw byte patterns) goes
+                       Mac -> ESP32 -> FPGA -> back, R times each, and must come
+                       back byte for byte; saved to data/fft/f2-fpga-echo.csv
+
     (F3 adds 'fpga': same signals, same scoring.)
 """
 
@@ -144,7 +148,9 @@ def model(sizes: list[int]) -> None:
 # Device link (protocol: see the header of firmware/fft_bench/fft_bench.ino)
 # ---------------------------------------------------------------------------
 
-STATUS = {0: "ok", 1: "bad checksum", 2: "bad size", 3: "bad command", 4: "FFT error"}
+STATUS = {0: "ok", 1: "bad checksum", 2: "bad size", 3: "bad command", 4: "FFT error",
+          5: "FPGA did not reply", 6: "data reached the FPGA corrupted",
+          7: "FPGA's reply arrived corrupted", 8: "FPGA rejected the command"}
 
 
 class Device:
@@ -174,10 +180,12 @@ class Device:
                 continue
             win = (win + b)[-4:]
         hdr = self._read(20)
-        status, log2n, _, fmin, favg, brev, mhz = struct.unpack("<BBHIIII", hdr)
+        status, log2n, has_payload, _, fmin, favg, extra, mhz = struct.unpack("<BBBBIIII", hdr)
+        # extra: bit-reverse cycles for the ESP32's own FFT, ESP32<->FPGA round trip (us)
+        # for FPGA commands; cpu_mhz: the clock the cycle counts are in
         meta = dict(status=status, log2n=log2n, fft_min=fmin, fft_avg=favg,
-                    bitrev=brev, cpu_mhz=mhz)
-        n_bytes = 4 * (1 << log2n) if status == 0 and fmin else 0
+                    bitrev=extra, cpu_mhz=mhz)
+        n_bytes = 4 * (1 << log2n) if has_payload else 0
         payload = self._read(n_bytes) if n_bytes else b""
         (cks,) = struct.unpack("<H", self._read(2))
         if cks != (sum(payload) & 0xFFFF):
@@ -268,6 +276,67 @@ def esp32(port: str | None, baud: int, sizes: list[int], impl: str = "simd") -> 
     return all_ok
 
 
+FPGA_N = 1024                                  # the core is generated for 1024 points
+
+
+def fpga_echo(port: str | None, baud: int, repeats: int) -> bool:
+    """F2: prove the Mac -> ESP32 -> FPGA -> ESP32 -> Mac path loses nothing.
+
+    The FPGA (fpga_fft/src/top.v, echo build) stores the 4096-byte signal in block
+    RAM and sends it back. Besides the real test signals, raw byte patterns cover
+    every byte value and the FPGA's own sync bytes (A5 5A) inside the payload.
+    """
+    port = port or find_port(("/dev/cu.wchusbserial*",))
+    dev = Device(port, baud)
+    if dev.ping()["status"] != 0:
+        sys.exit("ESP32 not ready")
+    rng = np.random.default_rng(2)
+    payloads = [(s.name, fm.pack(s.re, s.im))
+                for s in fm.make_signals(FPGA_N) + [fm.overload_signal(FPGA_N)]]
+    payloads += [("random bytes", rng.integers(0, 256, 4 * FPGA_N, dtype=np.uint8).tobytes()),
+                 ("sync bytes A5 5A", bytes([0xA5, 0x5A]) * (2 * FPGA_N)),
+                 ("all 0x00", bytes(4 * FPGA_N)),
+                 ("all 0xFF", bytes([0xFF]) * (4 * FPGA_N))]
+    wire_us = (3 + 4 * FPGA_N + 9 + 4 * FPGA_N + 2) * 10   # 10 bits per byte at 1 Mbaud
+    print(f"FPGA echo via ESP32 on {port}: {len(payloads)} payloads x {repeats}, "
+          f"{4 * FPGA_N} bytes each way, 1 Mbaud (wire time {wire_us / 1000:.1f} ms per frame)")
+    print(f"  {'payload':<18}{'frames ok':>11}{'byte errors':>13}{'round trip':>12}")
+
+    rows, frames, good = [], 0, 0
+    for name, data in payloads:
+        ok_n, errs, trips = 0, 0, []
+        for k in range(repeats):
+            meta, back = dev._request(b"E", FPGA_N.bit_length() - 1, data)
+            st = meta["status"]
+            diff = (sum(a != b for a, b in zip(back, data)) + abs(len(back) - len(data))
+                    if st == 0 else len(data))
+            ok = st == 0 and diff == 0
+            ok_n += ok
+            errs += diff
+            if st == 0:
+                trips.append(meta["bitrev"])
+            elif k == 0 or not ok:
+                print(f"    {name}: frame {k}: {STATUS.get(st, st)}")
+            rows.append(dict(payload=name, frame=k, status=st, byte_errors=diff,
+                             round_trip_us=meta["bitrev"] if st == 0 else ""))
+        frames += repeats
+        good += ok_n
+        rt = f"{np.mean(trips) / 1000:.1f} ms" if trips else "-"
+        print(f"  {name:<18}{f'{ok_n}/{repeats}':>11}{errs:>13}{rt:>12}")
+
+    DATA.mkdir(parents=True, exist_ok=True)
+    out = DATA / "f2-fpga-echo.csv"
+    with out.open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=rows[0].keys())
+        w.writeheader()
+        w.writerows(rows)
+    passed = good == frames
+    print(f"\nF2 echo: {good}/{frames} frames came back byte for byte -> "
+          f"{'PASS' if passed else 'FAIL'}")
+    print(f"saved {out.relative_to(ROOT)}")
+    return passed
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -280,10 +349,16 @@ def main() -> int:
     e.add_argument("--port")
     e.add_argument("--baud", type=int, default=2_000_000)
     e.add_argument("--impl", choices=IMPLS, default="simd")
+    fe = sub.add_parser("fpga-echo")
+    fe.add_argument("-r", "--repeats", type=int, default=10)
+    fe.add_argument("--port")
+    fe.add_argument("--baud", type=int, default=2_000_000)
     a = ap.parse_args()
 
     if a.cmd == "selftest":
         return 0 if selftest() else 1
+    if a.cmd == "fpga-echo":
+        return 0 if fpga_echo(a.port, a.baud, a.repeats) else 1
     if a.cmd == "esp32":
         return 0 if esp32(a.port, a.baud, a.n, a.impl) else 1
     model(a.n)

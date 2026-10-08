@@ -1,6 +1,6 @@
 # FFT benchmark — is the Tang Nano's FFT core correct, and how easy is it to use?
 
-**Status:** confirmed 2026-10-08. F0 done (see `docs/11-fft-benchmark.md`).
+**Status:** confirmed 2026-10-08. F0, E1, F1, F2 done (see `docs/11-fft-benchmark.md`).
 **Audio work:** paused. The bench is still in synthetic-load mode (`GEN_MODE=1`); restore
 before audio resumes.
 
@@ -119,7 +119,7 @@ designs measure 0.4–1.3 LSB rms; real bugs measure 400+ LSB. So correctness is
 | **F0** ✅ | Python: test signals, numpy ruler, ideal 16-bit integer model | None | Claude |
 | **E1** ✅ | ESP32 runs its own FFT on every signal: accuracy and speed. Also proves the Python tools | ESP32 | Claude |
 | **F1** ✅ | Find the size limit: generate core at 1024 in the Gowin GUI → build → resources → step down if needed | None | Karn (GUI), then Claude |
-| **F2** | Loopback: wire ESP32 TX → FPGA RX; the FPGA echoes the signal unchanged | Both | Claude; Karn wires and programs |
+| **F2** ✅ | Loopback: wire ESP32 TX → FPGA RX; the FPGA echoes the signal unchanged (Tang Nano 20K, pins 27/28; 650/650 frames) | Both | Claude; Karn wires and programs |
 | **F3** | FFT on the FPGA: Mac → ESP32 → FPGA → ESP32 → Mac, compare | Both | Claude |
 | **F4** | Results doc (`docs/11-fft-benchmark.md`), comparison table, ease-of-use log, weekly report | — | Claude |
 

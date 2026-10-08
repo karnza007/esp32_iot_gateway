@@ -2,7 +2,7 @@
 file=fft_1024
 ipc_version=4
 module=fft_1024
-target_device=gw1nsr4c-000
+target_device=gw2ar18c-000
 type=fft
 version=3.0
 

@@ -1,0 +1,651 @@
+payload,frame,status,byte_errors,round_trip_us
+impulse,0,0,0,82426
+impulse,1,0,0,82425
+impulse,2,0,0,82430
+impulse,3,0,0,82427
+impulse,4,0,0,82428
+impulse,5,0,0,82426
+impulse,6,0,0,82430
+impulse,7,0,0,82430
+impulse,8,0,0,82428
+impulse,9,0,0,82429
+impulse,10,0,0,82431
+impulse,11,0,0,82430
+impulse,12,0,0,82427
+impulse,13,0,0,82430
+impulse,14,0,0,82428
+impulse,15,0,0,82431
+impulse,16,0,0,82432
+impulse,17,0,0,82428
+impulse,18,0,0,82430
+impulse,19,0,0,82431
+impulse,20,0,0,82434
+impulse,21,0,0,82426
+impulse,22,0,0,82427
+impulse,23,0,0,82429
+impulse,24,0,0,82427
+impulse,25,0,0,82429
+impulse,26,0,0,82428
+impulse,27,0,0,82429
+impulse,28,0,0,82426
+impulse,29,0,0,82428
+impulse,30,0,0,82427
+impulse,31,0,0,82431
+impulse,32,0,0,82430
+impulse,33,0,0,82430
+impulse,34,0,0,82429
+impulse,35,0,0,82427
+impulse,36,0,0,82432
+impulse,37,0,0,82430
+impulse,38,0,0,82427
+impulse,39,0,0,82429
+impulse,40,0,0,82431
+impulse,41,0,0,82428
+impulse,42,0,0,82429
+impulse,43,0,0,82432
+impulse,44,0,0,82427
+impulse,45,0,0,82425
+impulse,46,0,0,82428
+impulse,47,0,0,82428
+impulse,48,0,0,82433
+impulse,49,0,0,82427
+dc,0,0,0,82433
+dc,1,0,0,82431
+dc,2,0,0,82428
+dc,3,0,0,82431
+dc,4,0,0,82426
+dc,5,0,0,82427
+dc,6,0,0,82431
+dc,7,0,0,82429
+dc,8,0,0,82428
+dc,9,0,0,82436
+dc,10,0,0,82428
+dc,11,0,0,82437
+dc,12,0,0,82435
+dc,13,0,0,82430
+dc,14,0,0,82427
+dc,15,0,0,82427
+dc,16,0,0,82427
+dc,17,0,0,82425
+dc,18,0,0,82432
+dc,19,0,0,82431
+dc,20,0,0,82429
+dc,21,0,0,82429
+dc,22,0,0,82430
+dc,23,0,0,82428
+dc,24,0,0,82431
+dc,25,0,0,82426
+dc,26,0,0,82426
+dc,27,0,0,82432
+dc,28,0,0,82431
+dc,29,0,0,82432
+dc,30,0,0,82430
+dc,31,0,0,82430
+dc,32,0,0,82428
+dc,33,0,0,82427
+dc,34,0,0,82426
+dc,35,0,0,82431
+dc,36,0,0,82427
+dc,37,0,0,82429
+dc,38,0,0,82427
+dc,39,0,0,82432
+dc,40,0,0,82429
+dc,41,0,0,82429
+dc,42,0,0,82427
+dc,43,0,0,82431
+dc,44,0,0,82432
+dc,45,0,0,82427
+dc,46,0,0,82426
+dc,47,0,0,82425
+dc,48,0,0,82427
+dc,49,0,0,82427
+tone_on_bin,0,0,0,82424
+tone_on_bin,1,0,0,82424
+tone_on_bin,2,0,0,82423
+tone_on_bin,3,0,0,82425
+tone_on_bin,4,0,0,82424
+tone_on_bin,5,0,0,82422
+tone_on_bin,6,0,0,82425
+tone_on_bin,7,0,0,82423
+tone_on_bin,8,0,0,82427
+tone_on_bin,9,0,0,82427
+tone_on_bin,10,0,0,82421
+tone_on_bin,11,0,0,82426
+tone_on_bin,12,0,0,82424
+tone_on_bin,13,0,0,82422
+tone_on_bin,14,0,0,82425
+tone_on_bin,15,0,0,82424
+tone_on_bin,16,0,0,82429
+tone_on_bin,17,0,0,82425
+tone_on_bin,18,0,0,82426
+tone_on_bin,19,0,0,82424
+tone_on_bin,20,0,0,82426
+tone_on_bin,21,0,0,82426
+tone_on_bin,22,0,0,82426
+tone_on_bin,23,0,0,82422
+tone_on_bin,24,0,0,82425
+tone_on_bin,25,0,0,82425
+tone_on_bin,26,0,0,82425
+tone_on_bin,27,0,0,82425
+tone_on_bin,28,0,0,82425
+tone_on_bin,29,0,0,82423
+tone_on_bin,30,0,0,82426
+tone_on_bin,31,0,0,82422
+tone_on_bin,32,0,0,82422
+tone_on_bin,33,0,0,82421
+tone_on_bin,34,0,0,82426
+tone_on_bin,35,0,0,82420
+tone_on_bin,36,0,0,82420
+tone_on_bin,37,0,0,82425
+tone_on_bin,38,0,0,82425
+tone_on_bin,39,0,0,82426
+tone_on_bin,40,0,0,82424
+tone_on_bin,41,0,0,82425
+tone_on_bin,42,0,0,82426
+tone_on_bin,43,0,0,82427
+tone_on_bin,44,0,0,82422
+tone_on_bin,45,0,0,82423
+tone_on_bin,46,0,0,82422
+tone_on_bin,47,0,0,82426
+tone_on_bin,48,0,0,82422
+tone_on_bin,49,0,0,82425
+tone_off_bin,0,0,0,82422
+tone_off_bin,1,0,0,82426
+tone_off_bin,2,0,0,82426
+tone_off_bin,3,0,0,82420
+tone_off_bin,4,0,0,82423
+tone_off_bin,5,0,0,82425
+tone_off_bin,6,0,0,82421
+tone_off_bin,7,0,0,82423
+tone_off_bin,8,0,0,82424
+tone_off_bin,9,0,0,82426
+tone_off_bin,10,0,0,82426
+tone_off_bin,11,0,0,82426
+tone_off_bin,12,0,0,82423
+tone_off_bin,13,0,0,82422
+tone_off_bin,14,0,0,82422
+tone_off_bin,15,0,0,82423
+tone_off_bin,16,0,0,82425
+tone_off_bin,17,0,0,82425
+tone_off_bin,18,0,0,82427
+tone_off_bin,19,0,0,82423
+tone_off_bin,20,0,0,82424
+tone_off_bin,21,0,0,82425
+tone_off_bin,22,0,0,82427
+tone_off_bin,23,0,0,82422
+tone_off_bin,24,0,0,82423
+tone_off_bin,25,0,0,82425
+tone_off_bin,26,0,0,82424
+tone_off_bin,27,0,0,82425
+tone_off_bin,28,0,0,82426
+tone_off_bin,29,0,0,82426
+tone_off_bin,30,0,0,82423
+tone_off_bin,31,0,0,82425
+tone_off_bin,32,0,0,82426
+tone_off_bin,33,0,0,82422
+tone_off_bin,34,0,0,82422
+tone_off_bin,35,0,0,82424
+tone_off_bin,36,0,0,82423
+tone_off_bin,37,0,0,82427
+tone_off_bin,38,0,0,82425
+tone_off_bin,39,0,0,82425
+tone_off_bin,40,0,0,82424
+tone_off_bin,41,0,0,82421
+tone_off_bin,42,0,0,82424
+tone_off_bin,43,0,0,82422
+tone_off_bin,44,0,0,82425
+tone_off_bin,45,0,0,82430
+tone_off_bin,46,0,0,82425
+tone_off_bin,47,0,0,82426
+tone_off_bin,48,0,0,82426
+tone_off_bin,49,0,0,82425
+two_tones,0,0,0,82422
+two_tones,1,0,0,82421
+two_tones,2,0,0,82425
+two_tones,3,0,0,82426
+two_tones,4,0,0,82425
+two_tones,5,0,0,82422
+two_tones,6,0,0,82425
+two_tones,7,0,0,82424
+two_tones,8,0,0,82425
+two_tones,9,0,0,82425
+two_tones,10,0,0,82426
+two_tones,11,0,0,82422
+two_tones,12,0,0,82430
+two_tones,13,0,0,82422
+two_tones,14,0,0,82424
+two_tones,15,0,0,82424
+two_tones,16,0,0,82426
+two_tones,17,0,0,82421
+two_tones,18,0,0,82422
+two_tones,19,0,0,82426
+two_tones,20,0,0,82425
+two_tones,21,0,0,82423
+two_tones,22,0,0,82426
+two_tones,23,0,0,82425
+two_tones,24,0,0,82426
+two_tones,25,0,0,82425
+two_tones,26,0,0,82422
+two_tones,27,0,0,82423
+two_tones,28,0,0,82422
+two_tones,29,0,0,82425
+two_tones,30,0,0,82426
+two_tones,31,0,0,82425
+two_tones,32,0,0,82424
+two_tones,33,0,0,82422
+two_tones,34,0,0,82421
+two_tones,35,0,0,82421
+two_tones,36,0,0,82426
+two_tones,37,0,0,82426
+two_tones,38,0,0,82424
+two_tones,39,0,0,82426
+two_tones,40,0,0,82425
+two_tones,41,0,0,82421
+two_tones,42,0,0,82422
+two_tones,43,0,0,82426
+two_tones,44,0,0,82421
+two_tones,45,0,0,82422
+two_tones,46,0,0,82422
+two_tones,47,0,0,82427
+two_tones,48,0,0,82421
+two_tones,49,0,0,82424
+noise,0,0,0,82427
+noise,1,0,0,82428
+noise,2,0,0,82427
+noise,3,0,0,82430
+noise,4,0,0,82432
+noise,5,0,0,82426
+noise,6,0,0,82436
+noise,7,0,0,82428
+noise,8,0,0,82427
+noise,9,0,0,82428
+noise,10,0,0,82428
+noise,11,0,0,82432
+noise,12,0,0,82430
+noise,13,0,0,82432
+noise,14,0,0,82429
+noise,15,0,0,82430
+noise,16,0,0,82431
+noise,17,0,0,82429
+noise,18,0,0,82429
+noise,19,0,0,82431
+noise,20,0,0,82427
+noise,21,0,0,82426
+noise,22,0,0,82431
+noise,23,0,0,82432
+noise,24,0,0,82430
+noise,25,0,0,82425
+noise,26,0,0,82427
+noise,27,0,0,82431
+noise,28,0,0,82426
+noise,29,0,0,82427
+noise,30,0,0,82436
+noise,31,0,0,82432
+noise,32,0,0,82427
+noise,33,0,0,82430
+noise,34,0,0,82426
+noise,35,0,0,82428
+noise,36,0,0,82430
+noise,37,0,0,82428
+noise,38,0,0,82431
+noise,39,0,0,82429
+noise,40,0,0,82431
+noise,41,0,0,82429
+noise,42,0,0,82431
+noise,43,0,0,82429
+noise,44,0,0,82430
+noise,45,0,0,82428
+noise,46,0,0,82428
+noise,47,0,0,82430
+noise,48,0,0,82430
+noise,49,0,0,82430
+full_scale,0,0,0,82424
+full_scale,1,0,0,82419
+full_scale,2,0,0,82422
+full_scale,3,0,0,82420
+full_scale,4,0,0,82420
+full_scale,5,0,0,82424
+full_scale,6,0,0,82419
+full_scale,7,0,0,82423
+full_scale,8,0,0,82422
+full_scale,9,0,0,82423
+full_scale,10,0,0,82424
+full_scale,11,0,0,82423
+full_scale,12,0,0,82421
+full_scale,13,0,0,82424
+full_scale,14,0,0,82423
+full_scale,15,0,0,82424
+full_scale,16,0,0,82419
+full_scale,17,0,0,82420
+full_scale,18,0,0,82421
+full_scale,19,0,0,82422
+full_scale,20,0,0,82420
+full_scale,21,0,0,82423
+full_scale,22,0,0,82429
+full_scale,23,0,0,82419
+full_scale,24,0,0,82422
+full_scale,25,0,0,82420
+full_scale,26,0,0,82420
+full_scale,27,0,0,82422
+full_scale,28,0,0,82421
+full_scale,29,0,0,82424
+full_scale,30,0,0,82424
+full_scale,31,0,0,82422
+full_scale,32,0,0,82421
+full_scale,33,0,0,82423
+full_scale,34,0,0,82421
+full_scale,35,0,0,82419
+full_scale,36,0,0,82424
+full_scale,37,0,0,82420
+full_scale,38,0,0,82424
+full_scale,39,0,0,82424
+full_scale,40,0,0,82423
+full_scale,41,0,0,82425
+full_scale,42,0,0,82421
+full_scale,43,0,0,82423
+full_scale,44,0,0,82424
+full_scale,45,0,0,82424
+full_scale,46,0,0,82423
+full_scale,47,0,0,82420
+full_scale,48,0,0,82421
+full_scale,49,0,0,82423
+complex_tone,0,0,0,82423
+complex_tone,1,0,0,82423
+complex_tone,2,0,0,82425
+complex_tone,3,0,0,82423
+complex_tone,4,0,0,82428
+complex_tone,5,0,0,82427
+complex_tone,6,0,0,82424
+complex_tone,7,0,0,82426
+complex_tone,8,0,0,82427
+complex_tone,9,0,0,82422
+complex_tone,10,0,0,82424
+complex_tone,11,0,0,82423
+complex_tone,12,0,0,82424
+complex_tone,13,0,0,82429
+complex_tone,14,0,0,82425
+complex_tone,15,0,0,82430
+complex_tone,16,0,0,82424
+complex_tone,17,0,0,82425
+complex_tone,18,0,0,82423
+complex_tone,19,0,0,82426
+complex_tone,20,0,0,82425
+complex_tone,21,0,0,82425
+complex_tone,22,0,0,82426
+complex_tone,23,0,0,82424
+complex_tone,24,0,0,82428
+complex_tone,25,0,0,82421
+complex_tone,26,0,0,82423
+complex_tone,27,0,0,82426
+complex_tone,28,0,0,82424
+complex_tone,29,0,0,82426
+complex_tone,30,0,0,82426
+complex_tone,31,0,0,82424
+complex_tone,32,0,0,82425
+complex_tone,33,0,0,82422
+complex_tone,34,0,0,82423
+complex_tone,35,0,0,82426
+complex_tone,36,0,0,82424
+complex_tone,37,0,0,82424
+complex_tone,38,0,0,82426
+complex_tone,39,0,0,82426
+complex_tone,40,0,0,82427
+complex_tone,41,0,0,82423
+complex_tone,42,0,0,82427
+complex_tone,43,0,0,82423
+complex_tone,44,0,0,82425
+complex_tone,45,0,0,82421
+complex_tone,46,0,0,82423
+complex_tone,47,0,0,82426
+complex_tone,48,0,0,82433
+complex_tone,49,0,0,82423
+overload,0,0,0,82422
+overload,1,0,0,82420
+overload,2,0,0,82424
+overload,3,0,0,82422
+overload,4,0,0,82420
+overload,5,0,0,82423
+overload,6,0,0,82420
+overload,7,0,0,82425
+overload,8,0,0,82421
+overload,9,0,0,82421
+overload,10,0,0,82421
+overload,11,0,0,82425
+overload,12,0,0,82423
+overload,13,0,0,82426
+overload,14,0,0,82425
+overload,15,0,0,82423
+overload,16,0,0,82425
+overload,17,0,0,82424
+overload,18,0,0,82428
+overload,19,0,0,82421
+overload,20,0,0,82422
+overload,21,0,0,82422
+overload,22,0,0,82422
+overload,23,0,0,82422
+overload,24,0,0,82422
+overload,25,0,0,82425
+overload,26,0,0,82421
+overload,27,0,0,82422
+overload,28,0,0,82421
+overload,29,0,0,82423
+overload,30,0,0,82425
+overload,31,0,0,82423
+overload,32,0,0,82424
+overload,33,0,0,82419
+overload,34,0,0,82421
+overload,35,0,0,82421
+overload,36,0,0,82421
+overload,37,0,0,82422
+overload,38,0,0,82422
+overload,39,0,0,82423
+overload,40,0,0,82420
+overload,41,0,0,82425
+overload,42,0,0,82421
+overload,43,0,0,82426
+overload,44,0,0,82427
+overload,45,0,0,82420
+overload,46,0,0,82425
+overload,47,0,0,82423
+overload,48,0,0,82421
+overload,49,0,0,82424
+random bytes,0,0,0,82431
+random bytes,1,0,0,82426
+random bytes,2,0,0,82431
+random bytes,3,0,0,82430
+random bytes,4,0,0,82426
+random bytes,5,0,0,82429
+random bytes,6,0,0,82431
+random bytes,7,0,0,82427
+random bytes,8,0,0,82431
+random bytes,9,0,0,82431
+random bytes,10,0,0,82429
+random bytes,11,0,0,82429
+random bytes,12,0,0,82430
+random bytes,13,0,0,82428
+random bytes,14,0,0,82429
+random bytes,15,0,0,82427
+random bytes,16,0,0,82426
+random bytes,17,0,0,82428
+random bytes,18,0,0,82426
+random bytes,19,0,0,82432
+random bytes,20,0,0,82430
+random bytes,21,0,0,82426
+random bytes,22,0,0,82428
+random bytes,23,0,0,82431
+random bytes,24,0,0,82428
+random bytes,25,0,0,82426
+random bytes,26,0,0,82433
+random bytes,27,0,0,82430
+random bytes,28,0,0,82428
+random bytes,29,0,0,82431
+random bytes,30,0,0,82428
+random bytes,31,0,0,82430
+random bytes,32,0,0,82427
+random bytes,33,0,0,82429
+random bytes,34,0,0,82430
+random bytes,35,0,0,82431
+random bytes,36,0,0,82427
+random bytes,37,0,0,82430
+random bytes,38,0,0,82428
+random bytes,39,0,0,82430
+random bytes,40,0,0,82426
+random bytes,41,0,0,82431
+random bytes,42,0,0,82426
+random bytes,43,0,0,82429
+random bytes,44,0,0,82428
+random bytes,45,0,0,82432
+random bytes,46,0,0,82427
+random bytes,47,0,0,82430
+random bytes,48,0,0,82428
+random bytes,49,0,0,82426
+sync bytes A5 5A,0,0,0,82425
+sync bytes A5 5A,1,0,0,82422
+sync bytes A5 5A,2,0,0,82427
+sync bytes A5 5A,3,0,0,82426
+sync bytes A5 5A,4,0,0,82421
+sync bytes A5 5A,5,0,0,82427
+sync bytes A5 5A,6,0,0,82427
+sync bytes A5 5A,7,0,0,82425
+sync bytes A5 5A,8,0,0,82425
+sync bytes A5 5A,9,0,0,82424
+sync bytes A5 5A,10,0,0,82424
+sync bytes A5 5A,11,0,0,82422
+sync bytes A5 5A,12,0,0,82421
+sync bytes A5 5A,13,0,0,82423
+sync bytes A5 5A,14,0,0,82423
+sync bytes A5 5A,15,0,0,82422
+sync bytes A5 5A,16,0,0,82423
+sync bytes A5 5A,17,0,0,82428
+sync bytes A5 5A,18,0,0,82426
+sync bytes A5 5A,19,0,0,82422
+sync bytes A5 5A,20,0,0,82421
+sync bytes A5 5A,21,0,0,82425
+sync bytes A5 5A,22,0,0,82426
+sync bytes A5 5A,23,0,0,82422
+sync bytes A5 5A,24,0,0,82427
+sync bytes A5 5A,25,0,0,82426
+sync bytes A5 5A,26,0,0,82425
+sync bytes A5 5A,27,0,0,82423
+sync bytes A5 5A,28,0,0,82424
+sync bytes A5 5A,29,0,0,82423
+sync bytes A5 5A,30,0,0,82424
+sync bytes A5 5A,31,0,0,82422
+sync bytes A5 5A,32,0,0,82426
+sync bytes A5 5A,33,0,0,82426
+sync bytes A5 5A,34,0,0,82422
+sync bytes A5 5A,35,0,0,82424
+sync bytes A5 5A,36,0,0,82424
+sync bytes A5 5A,37,0,0,82422
+sync bytes A5 5A,38,0,0,82424
+sync bytes A5 5A,39,0,0,82428
+sync bytes A5 5A,40,0,0,82422
+sync bytes A5 5A,41,0,0,82426
+sync bytes A5 5A,42,0,0,82421
+sync bytes A5 5A,43,0,0,82425
+sync bytes A5 5A,44,0,0,82422
+sync bytes A5 5A,45,0,0,82426
+sync bytes A5 5A,46,0,0,82425
+sync bytes A5 5A,47,0,0,82426
+sync bytes A5 5A,48,0,0,82425
+sync bytes A5 5A,49,0,0,82423
+all 0x00,0,0,0,82431
+all 0x00,1,0,0,82427
+all 0x00,2,0,0,82428
+all 0x00,3,0,0,82426
+all 0x00,4,0,0,82430
+all 0x00,5,0,0,82427
+all 0x00,6,0,0,82432
+all 0x00,7,0,0,82429
+all 0x00,8,0,0,82429
+all 0x00,9,0,0,82426
+all 0x00,10,0,0,82430
+all 0x00,11,0,0,82434
+all 0x00,12,0,0,82428
+all 0x00,13,0,0,82426
+all 0x00,14,0,0,82431
+all 0x00,15,0,0,82430
+all 0x00,16,0,0,82427
+all 0x00,17,0,0,82429
+all 0x00,18,0,0,82431
+all 0x00,19,0,0,82427
+all 0x00,20,0,0,82430
+all 0x00,21,0,0,82430
+all 0x00,22,0,0,82428
+all 0x00,23,0,0,82430
+all 0x00,24,0,0,82432
+all 0x00,25,0,0,82428
+all 0x00,26,0,0,82427
+all 0x00,27,0,0,82429
+all 0x00,28,0,0,82429
+all 0x00,29,0,0,82429
+all 0x00,30,0,0,82429
+all 0x00,31,0,0,82430
+all 0x00,32,0,0,82431
+all 0x00,33,0,0,82430
+all 0x00,34,0,0,82430
+all 0x00,35,0,0,82432
+all 0x00,36,0,0,82429
+all 0x00,37,0,0,82432
+all 0x00,38,0,0,82431
+all 0x00,39,0,0,82428
+all 0x00,40,0,0,82431
+all 0x00,41,0,0,82429
+all 0x00,42,0,0,82434
+all 0x00,43,0,0,82430
+all 0x00,44,0,0,82426
+all 0x00,45,0,0,82426
+all 0x00,46,0,0,82428
+all 0x00,47,0,0,82428
+all 0x00,48,0,0,82430
+all 0x00,49,0,0,82432
+all 0xFF,0,0,0,82421
+all 0xFF,1,0,0,82422
+all 0xFF,2,0,0,82425
+all 0xFF,3,0,0,82426
+all 0xFF,4,0,0,82423
+all 0xFF,5,0,0,82427
+all 0xFF,6,0,0,82423
+all 0xFF,7,0,0,82423
+all 0xFF,8,0,0,82427
+all 0xFF,9,0,0,82427
+all 0xFF,10,0,0,82425
+all 0xFF,11,0,0,82426
+all 0xFF,12,0,0,82425
+all 0xFF,13,0,0,82427
+all 0xFF,14,0,0,82422
+all 0xFF,15,0,0,82431
+all 0xFF,16,0,0,82425
+all 0xFF,17,0,0,82422
+all 0xFF,18,0,0,82423
+all 0xFF,19,0,0,82427
+all 0xFF,20,0,0,82427
+all 0xFF,21,0,0,82424
+all 0xFF,22,0,0,82425
+all 0xFF,23,0,0,82423
+all 0xFF,24,0,0,82422
+all 0xFF,25,0,0,82422
+all 0xFF,26,0,0,82424
+all 0xFF,27,0,0,82426
+all 0xFF,28,0,0,82424
+all 0xFF,29,0,0,82426
+all 0xFF,30,0,0,82424
+all 0xFF,31,0,0,82423
+all 0xFF,32,0,0,82425
+all 0xFF,33,0,0,82425
+all 0xFF,34,0,0,82424
+all 0xFF,35,0,0,82425
+all 0xFF,36,0,0,82427
+all 0xFF,37,0,0,82429
+all 0xFF,38,0,0,82426
+all 0xFF,39,0,0,82427
+all 0xFF,40,0,0,82423
+all 0xFF,41,0,0,82423
+all 0xFF,42,0,0,82424
+all 0xFF,43,0,0,82423
+all 0xFF,44,0,0,82425
+all 0xFF,45,0,0,82422
+all 0xFF,46,0,0,82429
+all 0xFF,47,0,0,82425
+all 0xFF,48,0,0,82426
+all 0xFF,49,0,0,82424

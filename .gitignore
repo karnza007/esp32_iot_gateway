@@ -31,3 +31,4 @@ fpga_fft/src/fft/temp/FFT/*.vg
 fpga_fft/src/fft/temp/FFT/*.html
 fpga_fft/src/fft/temp/FFT/*.xml
 fpga_fft/src/fft/temp/FFT/*.log
+fpga_fft/impl_build.log
