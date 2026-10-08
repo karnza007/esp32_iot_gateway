@@ -308,12 +308,19 @@ factor. Drawn out, the two crossing lines look like a butterfly.
 10 stages × 512 butterflies = **5,120 butterflies**. Each stage pairs up different elements:
 
 ```
- N = 8 example              stage 1          stage 2          stage 3
- (which pairs meet)         distance 1       distance 2       distance 4
-   x0 ─────────────────────●╲──────────────●╲───────────────●╲────────
-   x1 ─────────────────────●╱╲─────────────┼●╲──────────────┼┼●╲──────
-   x2 ─────────────────────●╲ ╲────────────●╱┼──────────────┼┼┼●╲─────
-   x3 ─────────────────────●╱──────────────●╱ ...           ●╱┼┼┼ ...
+ N = 8: which two memory addresses each butterfly reads and writes back
+
+   stage 1 (distance 1):   (0,1)  (2,3)  (4,5)  (6,7)
+   stage 2 (distance 2):   (0,2)  (1,3)  (4,6)  (5,7)
+   stage 3 (distance 4):   (0,4)  (1,5)  (2,6)  (3,7)
+
+          a ──●───────●── a' = (a + w·b) / 2
+               ╲     ╱
+                ╲   ╱        one butterfly:
+                 ╳           2 values in, 2 values out
+                ╱   ╲
+               ╱     ╲
+          b ──●───────●── b' = (a − w·b) / 2
 ```
 
 Stage 1 pairs neighbours (0,1)(2,3)…, stage 2 pairs elements 2 apart, stage 3 pairs elements 4
