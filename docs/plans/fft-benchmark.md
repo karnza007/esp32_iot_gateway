@@ -77,8 +77,10 @@ UART modules are replaced by SPI and this test becomes a ready-made correctness 
 | Direction | Forward only |
 | Scaling | ÷2 per stage (`RS111`) |
 | Widths | 16-bit input, twiddle, output |
-| FPGA clock | 54 MHz (proven PLL setup) |
+| FPGA clock | **27 MHz, the board's own crystal, no PLL** (changed 2026-10-08: 54 MHz was raised for the audio work; the FFT test doesn't need it). Both the Tang Nano 9K and 20K have a 27 MHz crystal |
+| UART baud (ESP32 ↔ FPGA) | **1 Mbaud** = 27 MHz ÷ 27, exact. 2 Mbaud would need ÷13.5, which a UART can't do |
 | Transport | UART now, SPI in M4 |
+| Board | Tang Nano 4K cannot build the core (F1); **9K or 20K**, requested from the advisor |
 | DE0-Nano later | Identical settings; compared at the Tang Nano's maximum size, plus its own maximum reported separately |
 
 ## 5. Test signals (all integer, 16-bit)
