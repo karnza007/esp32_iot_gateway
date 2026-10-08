@@ -23,3 +23,11 @@ __pycache__/
 # Measurement runs (per machine; curated results go in docs/)
 data/*.csv
 data/*.wav
+
+# Gowin FFT IP project: build output and the generator's synthesis by-products
+fpga_fft/impl/
+fpga_fft/sizing/impl/
+fpga_fft/src/fft/temp/FFT/*.vg
+fpga_fft/src/fft/temp/FFT/*.html
+fpga_fft/src/fft/temp/FFT/*.xml
+fpga_fft/src/fft/temp/FFT/*.log

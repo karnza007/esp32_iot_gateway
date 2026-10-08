@@ -6,7 +6,7 @@
 |---|---|
 | F0 — Python yardstick | ✅ 2026-10-08 |
 | E1 — ESP32 FFT | ✅ 2026-10-08 |
-| F1 — Gowin size limit | — |
+| F1 — Gowin size limit | ✅ 2026-10-08 — **1024 cannot be built; the limit is 16 points** (§9) |
 | F2 — FPGA loopback | — |
 | F3 — FPGA FFT | — |
 | F4 — Report | — |
@@ -263,3 +263,62 @@ here as a revision made *after* seeing real data, with both verdicts kept:
 
 The raw rms values are in the CSVs, so the verdict can be recomputed under any gate. The Gowin
 core (F3) will be judged by the 4 LSB gate, which was fixed before it was tested.
+
+## 9. F1 — how big a Gowin FFT fits on the Tang Nano 4K
+
+**Setup.** Karn generated the core in the GUI (Tools → IP Core Generator → FFT) with the agreed
+settings: 1024 points, forward, natural order, RS111, 16/16/16 bits, rounding, DSP multipliers,
+BSRAM for data and twiddles. Every setting was confirmed from the generated `defile.v`, not just
+the screenshot. The core was then placed and routed inside `fpga_fft/sizing/sizing_top.v`, a
+throwaway wrapper that feeds it pseudo-random data and folds every output into one pin, so
+nothing can be optimised away. Timing was judged at 54 MHz.
+
+### 9.1 The result
+
+| Data memory setting | N | Outcome |
+|---|---|---|
+| **BSRAM** (as generated) | 1024 | ❌ Place & route: *"Cannot instantiate … (DPB), there is no DPB resource in current device"* |
+| AUTO | 1024 | ❌ Same error, identical netlist |
+| REG / distributed | 1024 | ❌ Needs 32,768 flip-flops for the real-part memory alone; the chip has 3,573 |
+| REG | 64 | ❌ 4,370 flip-flops needed (3,573 available) |
+| REG | 32 | ❌ 4,964 logic cells needed (4,608 available) |
+| **REG** | **16** | ✅ Fits: logic 64 %, registers 37 %, BSRAM 3/10, DSP 2/8. **Fmax 44.3 MHz** (misses 54 MHz) |
+
+**The largest Gowin FFT that fits the Tang Nano 4K is 16 points**, and it must run at ≤ 44 MHz.
+
+### 9.2 Why: the chip lacks the *kind* of memory, not the amount
+
+The GW1NSR-4C has 10 memory blocks, and the 1024-point core only asked for 6. The problem is
+the **type**. The core's working memory is a **true dual-port** RAM (Gowin's `DPB`): two ports,
+each able to read *or* write, because a radix-2 butterfly reads two values and writes two
+values back in place. The GW1NSR-4C's blocks only offer single-port and **semi**-dual-port
+(one port writes, the other reads). With no `DPB`, the only fallback is building the memory
+out of flip-flops, and those run out at 16 points.
+
+H2 predicted that *memory* would be the limit, which was right, but for the wrong reason.
+It was never the amount; it was the type.
+
+### 9.3 What this says about ease of use
+
+| Observation | Why it matters |
+|---|---|
+| The generator offered BSRAM for this exact part number and produced the core without a warning | The failure only appears at place & route, after the user has written a design around it |
+| The generator's own synthesis report showed "6 BSRAM" as if all was well | Synthesis counts blocks but doesn't check that the chip has that block **type** |
+| The generator's settings file only has targets for the GW1A/GW2A family (`TARGET_DEVICE_GW1A2A`) and GW5 | Nothing specific to the GW1NSR, which is the chip that lacks `DPB` |
+| *Low Resource* vs *High Performance* produced **identical** netlists (211 REG, 184 ALU, 729 LUT, 2 DSP, 6 BSRAM) | For this configuration, the architecture option appears to do nothing |
+| The core is encrypted | The memory structure could only be found by trial builds, not by reading the code |
+
+**How the variants were built without the GUI.** The generator turned out to be a thin layer
+over one synthesis run: it writes the options as `` `define `` lines (`temp/FFT/defile.v`) plus
+two twiddle tables, then synthesises Gowin's encrypted `fft.v`. `fpga_fft/sizing/try_variant.sh`
+edits those inputs and repeats the run. The macro names were read from the generator's library
+(`libFFT.dylib`). The twiddle tables are `round(32767·cos)` and `round(−32767·sin)` over a full
+circle; `gen_twiddles.py` reproduces the GUI's 1024-point tables **byte for byte**, which
+confirms the method.
+
+```bash
+cd fpga_fft/sizing
+./try_variant.sh ebr1024 EBR_MEMORY 1024 10    # -> no DPB resource
+./try_variant.sh reg16   REG_MEMORY 16 4       # -> fits, Fmax 44.3 MHz
+```
+

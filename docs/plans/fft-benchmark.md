@@ -99,7 +99,7 @@ UART modules are replaced by SPI and this test becomes a ready-made correctness 
 | | Hypothesis | Pass if |
 |---|---|---|
 | **H1** Correctness | The Gowin core is a correct 16-bit FFT | Every peak in the right bin, and rms error ≤ 4 LSB on every signal (2 LSB until E1) |
-| **H2** Capacity | Memory blocks run out before logic; 1024 points fits (with buffer sharing), else 512 | Synthesis resource report |
+| **H2** Capacity | Memory blocks run out before logic; 1024 points fits (with buffer sharing), else 512 | Synthesis resource report — **result: rejected. The chip has no dual-port memory blocks, so 1024 cannot be built; max 16 points (F1)** |
 | **H3** ESP32 accuracy | The ESP32 is correct, and as accurate as the FPGA (same widths, same scaling) | H1's gate, then rms error (LSB) on noise compared between devices |
 | **H4** Speed | The FPGA finishes one FFT faster than the ESP32, and needs no CPU | Cycle counters converted to µs |
 
@@ -116,7 +116,7 @@ designs measure 0.4–1.3 LSB rms; real bugs measure 400+ LSB. So correctness is
 |---|---|---|---|
 | **F0** ✅ | Python: test signals, numpy ruler, ideal 16-bit integer model | None | Claude |
 | **E1** ✅ | ESP32 runs its own FFT on every signal: accuracy and speed. Also proves the Python tools | ESP32 | Claude |
-| **F1** | Find the size limit: generate core at 1024 in the Gowin GUI → build → resources → step down if needed | None | Karn (GUI), then Claude |
+| **F1** ✅ | Find the size limit: generate core at 1024 in the Gowin GUI → build → resources → step down if needed | None | Karn (GUI), then Claude |
 | **F2** | Loopback: wire ESP32 TX → FPGA RX; the FPGA echoes the signal unchanged | Both | Claude; Karn wires and programs |
 | **F3** | FFT on the FPGA: Mac → ESP32 → FPGA → ESP32 → Mac, compare | Both | Claude |
 | **F4** | Results doc (`docs/11-fft-benchmark.md`), comparison table, ease-of-use log, weekly report | — | Claude |
