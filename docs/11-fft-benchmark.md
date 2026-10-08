@@ -5,7 +5,7 @@
 | Step | Status |
 |---|---|
 | F0 — Python yardstick | ✅ 2026-10-08 |
-| E1 — ESP32 FFT | — |
+| E1 — ESP32 FFT | ✅ 2026-10-08 — gate decision pending (§8.4) |
 | F1 — Gowin size limit | — |
 | F2 — FPGA loopback | — |
 | F3 — FPGA FFT | — |
@@ -166,6 +166,93 @@ three correct designs and fails all five bugs.
 
 ```bash
 cd host
-python fft_bench.py selftest     # must print ALL PASS before any device result is trusted
-python fft_bench.py model        # the ceiling table, saved to data/fft/f0-model-baseline.csv
+python fft_bench.py selftest            # must print ALL PASS before any device result is trusted
+python fft_bench.py model               # the ceiling table -> data/fft/f0-model-baseline.csv
+python fft_bench.py esp32               # ESP32 SIMD FFT    -> data/fft/e1-esp32-simd.csv
+python fft_bench.py esp32 --impl ansi   # ESP32 plain-C FFT -> data/fft/e1-esp32-ansi.csv
 ```
+
+ESP32 firmware: `firmware/fft_bench` (flash with `arduino-cli compile --upload -b
+esp32:esp32:esp32s3:CDCOnBoot=cdc -p /dev/cu.wchusbserial* firmware/fft_bench`).
+
+## 8. E1 — ESP32-S3 results
+
+**Setup.** Mac → CH9102 (2 Mbaud) → ESP32-S3 at 240 MHz → ESP-DSP 16-bit FFT → back.
+Each request and reply carries a checksum, so a transport error can never pass as an FFT
+error. Each FFT ran 20 times on fresh copies of the input; the fastest run is reported.
+Two runs on two firmware builds gave identical numbers.
+
+ESP-DSP has two versions of the same 16-bit FFT, and both were measured:
+
+| | What it is |
+|---|---|
+| **SIMD** `dsps_fft2r_sc16_aes3` | What `dsps_fft2r_sc16` uses on the S3: hand-written assembly using the S3's vector instructions |
+| **Plain C** `dsps_fft2r_sc16_ansi` | Portable C, the readable version of the same algorithm |
+
+### 8.1 Accuracy
+
+RMS error in LSB (lower is better). Best possible 16-bit design: 0.43 LSB on noise.
+
+| N = 1024 | SIMD | Plain C | Best possible |
+|---|---|---|---|
+| impulse | 0.71 | 0.71 | 0.001 |
+| dc | 0.44 | 0.02 | 0 |
+| tone_on_bin | 0.98 | 0.06 | 0.28 |
+| tone_off_bin | **2.00** | 0.31 | 0.32 |
+| two_tones | 1.00 | 0.05 | 0.006 |
+| **noise** | **1.82 (+12.6 dB)** | **0.455 (+0.5 dB)** | 0.427 |
+| full_scale | 0.51 | 0.24 | 0.06 |
+| complex_tone | 1.04 | 0.11 | 0.009 |
+| peaks | all correct | all correct | all correct |
+
+Noise error across sizes: SIMD 1.76 / 1.81 / 1.82 / 1.82 / 1.84 LSB at N = 256 … 4096;
+plain C 0.49 / 0.46 / 0.43 at N = 256 / 1024 / 4096. **Neither degrades with size.**
+
+### 8.2 Speed (one FFT, CPU at 240 MHz)
+
+| N | SIMD FFT | Plain C FFT | Bit-reverse (to natural order) | SIMD total |
+|---|---|---|---|---|
+| 256 | 14.2 µs | 210 µs | 27–31 µs | 45 µs |
+| 512 | 30.4 µs | — | 54 µs | 84 µs |
+| **1024** | **65.1 µs** | **1,030 µs** | 108 µs | **173 µs** |
+| 2048 | 139 µs | — | 217 µs | 357 µs |
+| 4096 | 297 µs | 4,868 µs | 439 µs | 736 µs |
+
+Two surprises:
+- **SIMD is 16× faster than plain C** at N = 1024.
+- **Putting the output back in order costs more than the FFT itself** (108 µs vs 65 µs). The
+  FPGA core outputs natural order, so the fair ESP32 figure is the **total, 173 µs**.
+
+### 8.3 Why the SIMD version is less accurate
+
+Three systematic effects, found in the raw output:
+
+| Effect | Evidence |
+|---|---|
+| Output 1 LSB low | Impulse: every bin 31 instead of 32 (both versions: the rounding constant 0x7fff instead of 0x8000 rounds exact halves down) |
+| Gain loss of 2 LSB per stage (SIMD only) | DC bin 0 is short by exactly 8 / 12 / 16 / 20 / 24 at N = 16 / 64 / 256 / 1024 / 4096 — that is, 2 × log₂N |
+| More rounding noise, mostly in the real part (SIMD only) | After removing bias and gain: 1.43 LSB; real part 1.87, imaginary 1.10 |
+
+Plain C does not have the last two, so they come from how the SIMD assembly does its
+arithmetic, not from the algorithm. **ESP-DSP trades about 4× accuracy for 16× speed** in its
+fast version. For audio, a 0.01 dB gain error and ~2 LSB of noise are inaudible; for
+measurement-grade work, they matter.
+
+**Overload behaviour:** plain C wraps around, matching the Python model to 0.1 LSB rms (1,448
+vs 1,448). SIMD does about 7× less damage (212 LSB rms), consistent with **saturating** instead
+of wrapping.
+
+### 8.4 Against the correctness gate — decision pending
+
+Under the gate set in F0 (rms ≤ 2.0 LSB):
+- **Plain C passes all 24 tests.**
+- **SIMD passes 39 of 40, failing one by 0.003 LSB** (`tone_off_bin`, N = 1024: 2.003).
+
+That one failure is not a bug. The peaks are right, and the error is 200× smaller than the
+smallest real bug's maximum error. The gate came from **modelled** designs (worst 1.32 LSB),
+and the first **real, shipping** library turned out to sit right at it.
+
+The raw rms values are saved in the CSVs, so the verdict can be recomputed under any gate.
+**Proposed:** raise the gate to 4 LSB rms. That's 2× the worst correct design measured, and
+still under the nearest bug (one missing bin, 7.1 LSB). Awaiting confirmation; until then, the
+pre-registered result above stands as recorded.

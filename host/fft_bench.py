@@ -12,14 +12,22 @@ Each device result is judged twice:
                    bugs: 400+; see fft_model.CORRECT_RMS_LSB)
     how accurate?  rms error in LSB, and dB above the best possible design
 
-    (E1 adds 'esp32', F3 adds 'fpga': same signals, same scoring.)
+    esp32 [-n N ...]   run every signal through the ESP32-S3's 16-bit FFT
+                       (firmware/fft_bench), score it, time it;
+                       saved to data/fft/e1-esp32-<impl>.csv
+                       --impl simd (default, the fast one) | ansi (plain C)
+
+    (F3 adds 'fpga': same signals, same scoring.)
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import glob
+import struct
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -132,6 +140,134 @@ def model(sizes: list[int]) -> None:
     print(f"saved {out.relative_to(ROOT)}")
 
 
+# ---------------------------------------------------------------------------
+# Device link (protocol: see the header of firmware/fft_bench/fft_bench.ino)
+# ---------------------------------------------------------------------------
+
+STATUS = {0: "ok", 1: "bad checksum", 2: "bad size", 3: "bad command", 4: "FFT error"}
+
+
+class Device:
+    """One request/reply exchange per FFT, over a serial port."""
+
+    def __init__(self, port: str, baud: int):
+        import serial
+        self.ser = serial.Serial(port, baud, timeout=3)
+        time.sleep(0.5)                       # let a reset-on-open finish booting
+        self.ser.reset_input_buffer()
+
+    def _request(self, cmd: bytes, log2n: int, payload: bytes = b"") -> tuple[dict, bytes]:
+        body = b"FFTQ" + cmd + bytes([log2n, 0, 0])
+        if payload:
+            body += payload + struct.pack("<H", sum(payload) & 0xFFFF)
+        self.ser.write(body)
+        return self._reply()
+
+    def _reply(self) -> tuple[dict, bytes]:
+        win = b""
+        t0 = time.time()
+        while win != b"FFTR":                 # hunt for the magic, skip any junk
+            b = self.ser.read(1)
+            if not b:
+                if time.time() - t0 > 5:
+                    raise TimeoutError("no reply from device")
+                continue
+            win = (win + b)[-4:]
+        hdr = self._read(20)
+        status, log2n, _, fmin, favg, brev, mhz = struct.unpack("<BBHIIII", hdr)
+        meta = dict(status=status, log2n=log2n, fft_min=fmin, fft_avg=favg,
+                    bitrev=brev, cpu_mhz=mhz)
+        n_bytes = 4 * (1 << log2n) if status == 0 and fmin else 0
+        payload = self._read(n_bytes) if n_bytes else b""
+        (cks,) = struct.unpack("<H", self._read(2))
+        if cks != (sum(payload) & 0xFFFF):
+            raise IOError("reply checksum mismatch: transport error")
+        return meta, payload
+
+    def _read(self, n: int) -> bytes:
+        buf = self.ser.read(n)
+        if len(buf) != n:
+            raise TimeoutError(f"short read: {len(buf)} of {n} bytes")
+        return buf
+
+    def ping(self) -> dict:
+        return self._request(b"P", 0)[0]
+
+    def fft(self, sig: fm.Signal, cmd: bytes = b"L") -> tuple[np.ndarray, np.ndarray, dict]:
+        n = len(sig.re)
+        meta, payload = self._request(cmd, n.bit_length() - 1, fm.pack(sig.re, sig.im))
+        if meta["status"] != 0:
+            raise RuntimeError(f"device says: {STATUS.get(meta['status'], meta['status'])}")
+        r, i = fm.unpack(payload)
+        return r, i, meta
+
+
+def find_port(patterns: tuple[str, ...]) -> str:
+    for p in patterns:
+        hits = sorted(glob.glob(p))
+        if hits:
+            return hits[0]
+    sys.exit(f"no port matching {patterns}")
+
+
+IMPLS = {"simd": (b"L", "dsps_fft2r_sc16 (S3 SIMD)"), "ansi": (b"A", "dsps_fft2r_sc16_ansi (plain C)")}
+
+
+def esp32(port: str | None, baud: int, sizes: list[int], impl: str = "simd") -> bool:
+    port = port or find_port(("/dev/cu.wchusbserial*",))
+    dev = Device(port, baud)
+    info = dev.ping()
+    if info["status"] != 0:
+        sys.exit(f"ESP32 not ready: {STATUS.get(info['status'])}")
+    cmd, label = IMPLS[impl]
+    print(f"ESP32-S3 on {port}: ESP-DSP {label}, CPU {info['cpu_mhz']} MHz, "
+          f"max N {1 << info['log2n']}")
+
+    DATA.mkdir(parents=True, exist_ok=True)
+    rows, all_ok = [], True
+    for n in sizes:
+        floor = fm.noise_floor(n)
+        print(f"\nN = {n}   (best possible 16-bit design: {floor:.3f} LSB rms on noise)")
+        print(f"  {'signal':<14}{'verdict':>9}{'rms err':>9}{'max err':>9}"
+              f"{'peaks':>7}{'vs best':>9}")
+        timing = None
+        for s in fm.make_signals(n) + [fm.overload_signal(n)]:
+            r, i, meta = dev.fft(s, cmd)
+            timing = meta
+            sc = fm.score(r, i, s)
+            scored = s.name != "overload"
+            ok = fm.is_correct(sc)
+            if scored:
+                all_ok &= ok
+            verdict = ("CORRECT" if ok else "WRONG") if scored else "(info)"
+            pk = "-" if sc.peaks_ok is None else ("ok" if sc.peaks_ok else "WRONG")
+            # "vs best" only where every butterfly rounds; elsewhere the model is exact by luck
+            vs = (f"{fm.db_above_ideal(sc, floor):+8.1f}dB"
+                  if s.name in ("noise", "tone_off_bin") else "")
+            print(f"  {s.name:<14}{verdict:>9}{sc.rms_err_lsb:9.3f}{sc.max_err_lsb:9.2f}"
+                  f"{pk:>7}{vs:>9}")
+            rows.append(dict(device=f"esp32s3-{impl}", n=n, signal=s.name, correct=ok if scored else "",
+                             rms_err_lsb=round(sc.rms_err_lsb, 4),
+                             max_err_lsb=round(sc.max_err_lsb, 3),
+                             sqnr_db=round(sc.sqnr_db, 2), peaks_ok=sc.peaks_ok,
+                             fft_cycles_min=meta["fft_min"], fft_cycles_avg=meta["fft_avg"],
+                             bitrev_cycles=meta["bitrev"], cpu_mhz=meta["cpu_mhz"]))
+        mhz = timing["cpu_mhz"]
+        us = lambda c: c / mhz
+        print(f"  time: FFT {us(timing['fft_min']):.1f} us (min of 20, avg "
+              f"{us(timing['fft_avg']):.1f})  + bit-reverse {us(timing['bitrev']):.1f} us"
+              f"  = {us(timing['fft_min'] + timing['bitrev']):.1f} us total")
+
+    out = DATA / f"e1-esp32-{impl}.csv"
+    with out.open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=rows[0].keys())
+        w.writeheader()
+        w.writerows(rows)
+    print(f"\nH3 part 1 (ESP32 is a correct FFT): {'PASS' if all_ok else 'FAIL'}")
+    print(f"saved {out.relative_to(ROOT)}")
+    return all_ok
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -139,10 +275,17 @@ def main() -> int:
     sub.add_parser("selftest")
     m = sub.add_parser("model")
     m.add_argument("-n", type=int, nargs="+", default=[256, 512, 1024])
+    e = sub.add_parser("esp32")
+    e.add_argument("-n", type=int, nargs="+", default=[256, 512, 1024, 2048, 4096])
+    e.add_argument("--port")
+    e.add_argument("--baud", type=int, default=2_000_000)
+    e.add_argument("--impl", choices=IMPLS, default="simd")
     a = ap.parse_args()
 
     if a.cmd == "selftest":
         return 0 if selftest() else 1
+    if a.cmd == "esp32":
+        return 0 if esp32(a.port, a.baud, a.n, a.impl) else 1
     model(a.n)
     return 0
 
