@@ -399,6 +399,20 @@ builds had mapped to `DPB`; the test was then changed to normal write mode.)
 **Conclusion: the Tang Nano 4K's block RAM cannot be configured as true dual-port.** The
 Tang Nano 9K and 20K both can, so the 1024-point Gowin core should build on either.
 
+### 9.2c The same 1024-point core on the Tang Nano 9K and 20K chips (build only)
+
+Before borrowing a board, the unchanged 1024-point core (BSRAM data memory, as generated) was
+synthesised and placed & routed for each chip inside the same `sizing_top.v`:
+
+| Chip (board) | Builds? | Logic | Registers | BSRAM | DSP | Fmax (constraint 54 MHz) |
+|---|---|---|---|---|---|---|
+| GW1NSR-4C (Tang Nano 4K) | ❌ no `DPB` | — | — | — | — | — |
+| GW1NR-9C (Tang Nano 9K) | ✅ | 1,012 / 8,640 (12 %) | 254 / 6,693 (4 %) | 8 / 26 (31 %) | 2 / 10 | 53.95 MHz (just short; run at 50 MHz or lower) |
+| GW2AR-18C (Tang Nano 20K) | ✅ | 1,012 / 20,736 (5 %) | 254 / 15,750 (2 %) | 8 / 46 (18 %) | 2 / 24 | 88.3 MHz |
+
+Fmax includes the throwaway wrapper's logic, so it is a lower bound for the core itself.
+Either board can run the full 1024-point test with plenty of room for the buffers.
+
 ### 9.3 What this says about ease of use
 
 | Observation | Why it matters |
