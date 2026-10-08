@@ -358,6 +358,47 @@ well, so about 65,000 bits. The chip has 3,573 flip-flops. On top of that, every
 multiplexer that can pick any one of the N values, so logic runs out too: at 32 points, the
 multiplexers alone overflow the chip's 4,608 logic cells.
 
+### 9.2b Can the 4K's memory be configured as dual-port? — checked three ways
+
+A web search summary claimed the Tang Nano 4K's block RAM supports dual-port mode. That claim
+was checked against three independent primary sources:
+
+**1. Gowin's datasheet (DS861-1.9E, GW1NSR series, §2.7.2, Table 2-5).** The series feature
+list says "Supports Dual Port mode", but the table's footnote reads:
+
+> *[1] GW1NS-4C/4 do not support dual port mode.*
+
+The datasheet also states the GW1NSR is a system-in-package built on the GW1NS die, so the
+GW1NSR-4C (Tang Nano 4K) has the GW1NS-4C's memory. **The search summary repeated the series
+headline and missed the footnote.**
+
+**2. Gowin's own IDE data.** Each memory generator lists the chips it supports:
+
+| Memory generator | GW1NSR-4C (Tang Nano 4K) | GW1NR-9C (Tang Nano 9K) | GW2AR-18C (Tang Nano 20K) |
+|---|---|---|---|
+| Single port (`RAM_SP`) | ✅ | ✅ | ✅ |
+| Semi-dual port (`RAM_SDPB`) | ✅ | ✅ | ✅ |
+| **True dual port (`RAM_DPB`)** | **❌ not listed** | ✅ | ✅ |
+| ROM (`RAM_pROM`) | ✅ | ✅ | ✅ |
+
+**3. A direct build test** (`fpga_fft/sizing/dpb_test/run.sh`): the smallest possible RAM
+where both ports read and write, built through place & route for each chip:
+
+| Design | Chip | Result |
+|---|---|---|
+| True dual-port | GW1NSR-4C (4K) | ❌ *"No 'DPB' resource in current device"* |
+| Semi-dual-port | GW1NSR-4C (4K) | ✅ builds (1/10 BSRAM) |
+| True dual-port | GW1NR-9C (9K) | ✅ builds (1/26 BSRAM) |
+| True dual-port | GW2AR-18C (20K) | ✅ builds (1/46 BSRAM) |
+
+The 9K and 20K rows are the control: the same file builds there, so the 4K failure is the chip,
+not the test. (An earlier version of the test used a read-before-write memory, which the 9K and
+20K rejected with *"Not support … (DPB) WRITE_MODE0 = 2'b10"*. That message confirmed those
+builds had mapped to `DPB`; the test was then changed to normal write mode.)
+
+**Conclusion: the Tang Nano 4K's block RAM cannot be configured as true dual-port.** The
+Tang Nano 9K and 20K both can, so the 1024-point Gowin core should build on either.
+
 ### 9.3 What this says about ease of use
 
 | Observation | Why it matters |
