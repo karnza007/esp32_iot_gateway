@@ -511,7 +511,7 @@ Full write-up with tables and interpretation: `docs/reports/2026-10-11.md`, Part
 | RMS error on noise | **2.184 LSB** (+14.2 dB over the best possible 0.427). ESP32 SIMD 1.821, plain C 0.455 |
 | **Full-scale square wave** | **Wrong** (1023.8 LSB rms). Inputs near −32768 wrap inside the core; see the threshold table in the report |
 | Time | **7,190 cycles = 266.3 µs** at 27 MHz, start to last result (identical on every signal) |
-| Resources | 1,426 logic (7 %), 480 registers, 8 / 46 BSRAM (2 SDPB + 4 DPB + 2 pROM), 2 / 24 DSP, Fmax 80.6 MHz |
+| Resources | F3 build: 1,426 logic (7 %), 480 registers, 8 / 46 BSRAM (2 SDPB + 4 DPB + 2 pROM), 2 / 24 DSP, Fmax 80.6 MHz. With the time-split counters (§12, current): 1,612 logic (8 %), 649 registers, same BSRAM/DSP, Fmax 94.1 MHz |
 
 ```bash
 fpga_fft/build.sh program          # build + load the FPGA (SRAM)
