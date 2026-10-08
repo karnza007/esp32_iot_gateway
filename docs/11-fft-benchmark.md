@@ -298,6 +298,59 @@ out of flip-flops, and those run out at 16 points.
 H2 predicted that *memory* would be the limit, which was right, but for the wrong reason.
 It was never the amount; it was the type.
 
+### 9.2a How an FFT uses its memory (for explaining the result)
+
+**The butterfly.** An N-point FFT is built from one small operation repeated many times: take
+two numbers `a` and `b`, and produce `(a + w·b)/2` and `(a − w·b)/2`, where `w` is a twiddle
+factor. Drawn out, the two crossing lines look like a butterfly.
+
+**Stages.** The FFT runs log₂N stages, each made of N/2 butterflies. At N = 1024 that's
+10 stages × 512 butterflies = **5,120 butterflies**. Each stage pairs up different elements:
+
+```
+ N = 8 example              stage 1          stage 2          stage 3
+ (which pairs meet)         distance 1       distance 2       distance 4
+   x0 ─────────────────────●╲──────────────●╲───────────────●╲────────
+   x1 ─────────────────────●╱╲─────────────┼●╲──────────────┼┼●╲──────
+   x2 ─────────────────────●╲ ╲────────────●╱┼──────────────┼┼┼●╲─────
+   x3 ─────────────────────●╱──────────────●╱ ...           ●╱┼┼┼ ...
+```
+
+Stage 1 pairs neighbours (0,1)(2,3)…, stage 2 pairs elements 2 apart, stage 3 pairs elements 4
+apart, and so on, up to 512 apart in the last stage.
+
+**In place.** A small FFT core keeps all N values in **one memory**. Each butterfly reads two
+values and writes its two results **back into the same two addresses**. Then the next
+butterfly does the same. That's why the memory needs to be only N words, not N words per stage.
+
+**Four memory accesses per butterfly.** Read `a`, read `b`, write `a′`, write `b′`. A memory
+**port** is one address-and-data connection and does **one access per clock**. So:
+
+| Memory type | Ports | Accesses per clock | Clocks per butterfly | On GW1NSR-4C? |
+|---|---|---|---|---|
+| Single port (SP) | 1 read-or-write | 1 | 4 | ✅ |
+| **Semi**-dual port (SDP) | 1 write-only + 1 read-only | 1 read + 1 write | 2 (limited by the reads) | ✅ |
+| **True** dual port (DP / `DPB`) | 2, each read-or-write | 2 reads, or 2 writes, or one of each | 2, with any mix | ❌ |
+| Flip-flops | any number | unlimited | 1 | ✅ but tiny |
+
+The Gowin core is designed around **true** dual port: one clock reads `a` and `b` together
+through both ports, a later clock writes `a′` and `b′` together through both ports. A
+semi-dual-port memory can't do that, because it has only **one** read port and only **one**
+write port, so two reads in one clock is impossible.
+
+**This is a design choice in the core, not a limit of FFTs.** An FFT *can* be built for
+semi-dual-port memory. For example, split the data across two memories (banking, so `a` and `b`
+always live in different blocks), or alternate between two memories each stage (ping-pong), or
+simply accept two clocks per read. Gowin's core doesn't offer these, and its encrypted source
+can't be changed. A Gowin chip that has `DPB` blocks (the GW1A/GW2A family the generator
+targets) would build the 1024-point core.
+
+**Why flip-flops run out so fast.** Flip-flops have no port limit, but each one stores a single
+bit. A 1024-point core holds 1024 complex values × 32 bits, and needs space for the results as
+well, so about 65,000 bits. The chip has 3,573 flip-flops. On top of that, every read needs a
+multiplexer that can pick any one of the N values, so logic runs out too: at 32 points, the
+multiplexers alone overflow the chip's 4,608 logic cells.
+
 ### 9.3 What this says about ease of use
 
 | Observation | Why it matters |
