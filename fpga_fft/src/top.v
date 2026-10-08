@@ -24,7 +24,8 @@
 //
 // PROTOCOL (ESP32 <-> FPGA, little-endian; firmware/fft_bench must match)
 //   request   A5 5A  cmd:u8  payload
-//   reply     5A A5  status:u8  cycles:u32  rx_sum:u16  [payload]  tx_sum:u16
+//   reply     5A A5  status:u8  cycles:u32  rx_sum:u16  phase stamps:5 x u32
+//             [payload]  tx_sum:u16
 //   cmd       'E' echo: payload comes back unchanged
 //             'F' FFT: payload comes back as its 1024-point FFT (natural order, ÷N)
 //   payload   1024 x (re:int16, im:int16) = 4096 bytes, sent only when status = 0
@@ -32,6 +33,13 @@
 //   cycles    27 MHz clocks from 'start' to the last result (0 for echo)
 //   rx_sum    byte sum of the payload as the FPGA RECEIVED it, so the ESP32 can tell
 //             corruption on the way in from corruption on the way out (tx_sum)
+//   stamps    TIME SPLIT of one FFT ('F' only, else 0). The cycle counter starts at 0
+//             in the clock where 'start' is high; each stamp is the counter's value in
+//             the first clock where that core signal is high:
+//               sod   first sample taken        eod  last sample taken
+//               busy rises (computing)          busy falls (done computing)
+//               soud  first result out          (eoud = cycles - 1: last result out)
+//             host/fft_bench.py turns them into setup / load / compute / unload.
 //
 //   If the request stops for 1 ms mid-frame (a lost byte), the frame is dropped
 //   and the engine waits for the next A5 5A. The ESP32 sees no reply and says so.
@@ -111,24 +119,17 @@ module top (
     reg [31:0] cycles  = 32'd0;
     reg [15:0] rx_sum  = 16'd0;
     reg [15:0] tx_sum  = 16'd0;
-    reg [3:0]  hdr_idx = 4'd0;
+    reg [4:0]  hdr_idx = 5'd0;
+    localparam [4:0] HDR_LAST = 5'd28;            // 29 header bytes: 2+1+4+2+5*4
+    reg [31:0] t_sod = 0, t_eod = 0, t_brise = 0, t_bfall = 0, t_soud = 0;
+    reg [4:0]  seen  = 5'd0;                      // which stamps are taken this frame
     reg [23:0] word    = 24'd0;                   // first three bytes of the current point
     reg [14:0] idle    = 15'd0;                   // clocks since the last received byte
 
-    reg [7:0] hdr_byte;
-    always @* begin
-        case (hdr_idx)
-            4'd0:    hdr_byte = 8'h5A;
-            4'd1:    hdr_byte = 8'hA5;
-            4'd2:    hdr_byte = status;
-            4'd3:    hdr_byte = cycles[7:0];
-            4'd4:    hdr_byte = cycles[15:8];
-            4'd5:    hdr_byte = cycles[23:16];
-            4'd6:    hdr_byte = cycles[31:24];
-            4'd7:    hdr_byte = rx_sum[7:0];
-            default: hdr_byte = rx_sum[15:8];
-        endcase
-    end
+    // header bytes, first byte in the lowest 8 bits
+    wire [231:0] hdr_vec = {t_soud, t_bfall, t_brise, t_eod, t_sod,
+                            rx_sum, cycles, status, 8'hA5, 8'h5A};
+    wire [7:0]   hdr_byte = hdr_vec[hdr_idx * 8 +: 8];
 
     reg [7:0] pay_byte;
     always @* begin
@@ -178,7 +179,7 @@ module top (
                         else begin
                             status  <= 8'd1;          // unknown command: reply, no payload
                             cycles  <= 32'd0;
-                            hdr_idx <= 4'd0;
+                            hdr_idx <= 5'd0;
                             state   <= S_HDR;
                         end
                     end
@@ -199,7 +200,9 @@ module top (
                 S_PROC: begin
                     status  <= 8'd0;
                     cycles  <= 32'd0;
-                    hdr_idx <= 4'd0;
+                    seen    <= 5'd0;
+                    {t_sod, t_eod, t_brise, t_bfall, t_soud} <= 160'd0;
+                    hdr_idx <= 5'd0;
                     if (cmd == "F") begin
                         fft_start <= 1'b1;            // one-clock pulse (cleared below)
                         state     <= S_FFT;
@@ -208,6 +211,12 @@ module top (
                 S_FFT: begin                          // core loads, computes, unloads
                     fft_start <= 1'b0;
                     cycles    <= cycles + 1'b1;
+                    // time split: note the counter at the first clock of each phase signal
+                    if (sod  && !seen[0])            begin t_sod   <= cycles; seen[0] <= 1'b1; end
+                    if (eod  && !seen[1])            begin t_eod   <= cycles; seen[1] <= 1'b1; end
+                    if (busy && !seen[2])            begin t_brise <= cycles; seen[2] <= 1'b1; end
+                    if (!busy && seen[2] && !seen[3]) begin t_bfall <= cycles; seen[3] <= 1'b1; end
+                    if (soud && !seen[4])            begin t_soud  <= cycles; seen[4] <= 1'b1; end
                     if (opd) begin                    // each result to its own bin
                         we      <= 1'b1;
                         wr_addr <= idx;
@@ -223,8 +232,8 @@ module top (
                     if (can_send) begin
                         tx_data  <= hdr_byte;
                         tx_valid <= 1'b1;
-                        if (hdr_idx == 4'd8) begin
-                            hdr_idx <= 4'd0;
+                        if (hdr_idx == HDR_LAST) begin
+                            hdr_idx <= 5'd0;
                             tx_sum  <= 16'd0;
                             state   <= (status == 8'd0) ? S_PAY : S_SUM;
                         end else hdr_idx <= hdr_idx + 1'b1;
@@ -244,7 +253,7 @@ module top (
                         tx_data  <= hdr_idx[0] ? tx_sum[15:8] : tx_sum[7:0];
                         tx_valid <= 1'b1;
                         if (hdr_idx[0]) begin
-                            hdr_idx   <= 4'd0;
+                            hdr_idx   <= 5'd0;
                             frame_tog <= ~frame_tog;
                             state     <= S_SYNC0;     // uart_tx finishes the last byte alone
                         end else hdr_idx <= hdr_idx + 1'b1;

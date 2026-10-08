@@ -182,11 +182,13 @@ class Device:
                 continue
             win = (win + b)[-4:]
         hdr = self._read(20)
-        status, log2n, has_payload, _, fmin, favg, extra, mhz = struct.unpack("<BBBBIIII", hdr)
+        status, log2n, has_payload, n_split, fmin, favg, extra, mhz = struct.unpack("<BBBBIIII", hdr)
         # extra: bit-reverse cycles for the ESP32's own FFT, ESP32<->FPGA round trip (us)
         # for FPGA commands; cpu_mhz: the clock the cycle counts are in
+        # split: the time split, see esp32_split() / fpga_split()
+        split = list(struct.unpack(f"<{n_split}I", self._read(4 * n_split))) if n_split else []
         meta = dict(status=status, log2n=log2n, fft_min=fmin, fft_avg=favg,
-                    bitrev=extra, cpu_mhz=mhz)
+                    bitrev=extra, cpu_mhz=mhz, split=split)
         n_bytes = 4 * (1 << log2n) if has_payload else 0
         payload = self._read(n_bytes) if n_bytes else b""
         (cks,) = struct.unpack("<H", self._read(2))
@@ -218,6 +220,31 @@ def find_port(patterns: tuple[str, ...]) -> str:
         if hits:
             return hits[0]
     sys.exit(f"no port matching {patterns}")
+
+
+def esp32_split(meta: dict) -> dict:
+    """ESP32 time split, in CPU cycles: copy -> FFT -> bit-reverse (fastest of 20 each),
+    plus the fastest whole run as a cross-check on the sum of the steps."""
+    copy, run = meta["split"]
+    return dict(copy=copy, fft=meta["fft_min"], bitrev=meta["bitrev"], whole_run=run)
+
+
+def fpga_split(meta: dict) -> dict:
+    """FPGA time split, in 27 MHz cycles, from the core's phase-signal stamps.
+
+    Stamp = cycle counter value in the first clock a signal is high; the counter is 0
+    in the clock where 'start' is high, and 'cycles' = last-result clock + 1:
+        setup   start .. the clock before sod          = sod
+        load    sod .. eod (one sample per clock)       = eod - sod + 1
+        compute after eod .. the clock before soud      = soud - eod - 1
+        unload  soud .. eoud (one result per clock)     = cycles - soud
+    The four add up to 'cycles' exactly. busy rise/fall show where, inside the
+    compute phase, the core says it is calculating.
+    """
+    sod, eod, brise, bfall, soud = meta["split"]
+    total = meta["fft_min"]
+    return dict(setup=sod, load=eod - sod + 1, compute=soud - eod - 1, unload=total - soud,
+                total=total, busy_rise=brise, busy_fall=bfall, busy=bfall - brise)
 
 
 IMPLS = {"simd": (b"L", "dsps_fft2r_sc16 (S3 SIMD)"), "ansi": (b"A", "dsps_fft2r_sc16_ansi (plain C)")}
@@ -261,12 +288,18 @@ def esp32(port: str | None, baud: int, sizes: list[int], impl: str = "simd") -> 
                              max_err_lsb=round(sc.max_err_lsb, 3),
                              sqnr_db=round(sc.sqnr_db, 2), peaks_ok=sc.peaks_ok,
                              fft_cycles_min=meta["fft_min"], fft_cycles_avg=meta["fft_avg"],
-                             bitrev_cycles=meta["bitrev"], cpu_mhz=meta["cpu_mhz"]))
+                             bitrev_cycles=meta["bitrev"], copy_cycles=meta["split"][0],
+                             whole_run_cycles=meta["split"][1], cpu_mhz=meta["cpu_mhz"]))
         mhz = timing["cpu_mhz"]
-        us = lambda c: c / mhz
-        print(f"  time: FFT {us(timing['fft_min']):.1f} us (min of 20, avg "
-              f"{us(timing['fft_avg']):.1f})  + bit-reverse {us(timing['bitrev']):.1f} us"
-              f"  = {us(timing['fft_min'] + timing['bitrev']):.1f} us total")
+        sp = esp32_split(timing)
+        steps = sp["copy"] + sp["fft"] + sp["bitrev"]
+        print(f"  time split (fastest of 20 runs, {mhz} MHz):")
+        for name, c in (("1 copy input", sp["copy"]), ("2 FFT", sp["fft"]),
+                        ("3 bit-reverse", sp["bitrev"])):
+            print(f"    {name:<16}{c:>9} cycles {c / mhz:9.1f} us  {100 * c / steps:5.1f} %")
+        print(f"    {'sum of steps':<16}{steps:>9} cycles {steps / mhz:9.1f} us"
+              f"   (whole run measured in one go: {sp['whole_run']} = {sp['whole_run'] / mhz:.1f} us)"
+              f"   FFT avg {timing['fft_avg'] / mhz:.1f} us")
 
     out = DATA / f"e1-esp32-{impl}.csv"
     with out.open("w", newline="") as f:
@@ -371,12 +404,21 @@ def fpga(port: str | None, baud: int) -> bool:
                          max_err_lsb=round(sc.max_err_lsb, 3),
                          sqnr_db=round(sc.sqnr_db, 2), peaks_ok=sc.peaks_ok,
                          fft_cycles=meta["fft_min"], clk_mhz=meta["cpu_mhz"],
-                         round_trip_us=meta["bitrev"]))
+                         round_trip_us=meta["bitrev"],
+                         **{f"{k}_cycles": v for k, v in fpga_split(meta).items()}))
     mhz = meta["cpu_mhz"]
     c = max(cycles)
     print(f"  time: {c} cycles at {mhz} MHz = {c / mhz:.1f} us, start to last result "
           f"(load + compute + unload, natural order)"
           + ("" if len(cycles) == 1 else f"; varied {min(cycles)}..{max(cycles)}"))
+    sp = fpga_split(meta)
+    print(f"  time split ({mhz} MHz, last signal):")
+    for name, key in (("1 setup", "setup"), ("2 load samples", "load"),
+                      ("3 compute", "compute"), ("4 unload results", "unload")):
+        print(f"    {name:<18}{sp[key]:>7} cycles {sp[key] / mhz:8.1f} us  {100 * sp[key] / sp['total']:5.1f} %")
+    print(f"    {'total':<18}{sp['total']:>7} cycles {sp['total'] / mhz:8.1f} us"
+          f"   (core's busy signal: high for {sp['busy']} cycles, "
+          f"from {sp['busy_rise']} to {sp['busy_fall']})")
     print(f"  ESP32 <-> FPGA round trip (UART, not the FFT): {meta['bitrev'] / 1000:.1f} ms")
 
     DATA.mkdir(parents=True, exist_ok=True)

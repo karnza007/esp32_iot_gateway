@@ -522,3 +522,21 @@ python host/fft_bench.py fpga      # -> data/fft/f3-fpga-gowin.csv
 cleared it; an ESP32 reset alone and a full echo run did not light it again. All frames were
 unaffected (byte count + two checksums). Most likely a one-time setup event (ESP32 flashing or
 wire handling).
+
+## 12. Time split (where the time goes)
+
+Method, diagrams and full tables: `docs/reports/2026-10-11.md` §8. N = 1024:
+
+| Step | Gowin FPGA (27 MHz) | ESP32 SIMD (240 MHz) | ESP32 plain C |
+|---|---|---|---|
+| Input in (FPGA load / ESP32 copy) | 1,024 cyc = 37.9 µs | 2,596 cyc = 10.8 µs | 10.8 µs |
+| Compute | 5,141 cyc = 190.4 µs (~1 butterfly/clock) | 15,631 cyc = 65.1 µs (~3 cyc/butterfly) | 247,166 cyc = 1,029.9 µs (~48) |
+| Natural order (FPGA unload / ESP32 bit-reverse) | 1,024 cyc = 37.9 µs | 25,972 cyc = 108.2 µs | 108.2 µs |
+| Total | 7,190 cyc = 266.3 µs | 44,199 cyc = 184.2 µs | 275,734 cyc = 1,148.9 µs |
+
+- FPGA: `top.v` stamps the cycle counter at the first clock of `sod`, `eod`, `busy`↑, `busy`↓
+  and `soud`; the reply carries the 5 stamps (FPGA reply header is now 29 bytes). Cost: +186
+  logic, +169 registers.
+- ESP32: the cycle counter is read between copy, FFT and bit-reverse in each of 20 runs; the
+  fastest of each step is reported, and a whole-run timing cross-checks the sum (within 0.1 %).
+  The ESP32 → Mac reply carries these as a "split" block (`n_split` × u32 after the header).

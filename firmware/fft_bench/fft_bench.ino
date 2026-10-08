@@ -22,8 +22,9 @@
 //
 // PROTOCOL (little-endian; host/fft_bench.py must match)
 //   request   "FFTQ"  cmd:u8  log2n:u8  rsv:u16  payload  sum:u16
-//   reply     "FFTR"  status:u8  log2n:u8  has_payload:u8  rsv:u8
-//             fft_min:u32  fft_avg:u32  extra:u32  clk_mhz:u32  [payload]  sum:u16
+//   reply     "FFTR"  status:u8  log2n:u8  has_payload:u8  n_split:u8
+//             fft_min:u32  fft_avg:u32  extra:u32  clk_mhz:u32
+//             split: n_split x u32  [payload]  sum:u16
 //   cmd   'L' = run the FFT here (dsps_fft2r_sc16 -> the S3 SIMD version)
 //         'A' = run the plain-C version (dsps_fft2r_sc16_ansi), same library
 //         'E' = pass the signal to the FPGA, which echoes it back (F2; N = 1024 only)
@@ -32,14 +33,20 @@
 //   payload   N x (re:int16, im:int16) = 4N bytes;  sum = byte sum of payload
 //   fft_min/avg  cycles of the FFT, in clocks of clk_mhz (ESP32 CPU, or FPGA 27 MHz)
 //   extra     'L'/'A': bit-reverse cycles.  FPGA commands: ESP32<->FPGA round trip, us
+//   split     the TIME SPLIT, in clocks of clk_mhz:
+//             'L'/'A': copy_min, total_min (fft_min and extra are the other two steps)
+//             'E'/'F': the FPGA's phase stamps sod, eod, busy rise, busy fall, soud
+//                      (see fpga_fft/src/top.v)
 //   status    0 ok, 1 bad checksum, 2 bad size, 3 bad command, 4 FFT error,
 //             5 FPGA did not reply, 6 data reached the FPGA corrupted,
 //             7 FPGA's reply arrived corrupted, 8 FPGA rejected the command
 //
-// TIMING
-//   The CPU cycle counter is read around each call. The FFT works in place, so
-//   it runs REPEATS times, each on a fresh copy of the input; fft_min is the
-//   cleanest run (no interrupt landed in it), fft_avg the typical one.
+// TIMING (the time split)
+//   One run is three steps, and the CPU cycle counter is read between them:
+//     c0 ─ copy input to the work buffer ─ c1 ─ FFT ─ c2 ─ bit-reverse ─ c3
+//   The FFT works in place, so every run starts from a fresh copy. It runs
+//   REPEATS times; each step's fastest run is reported (no interrupt landed in it),
+//   plus the fastest whole run c3 - c0 as a cross-check on the sum of the steps.
 //
 // Flash:  arduino-cli compile --upload -b esp32:esp32:esp32s3:CDCOnBoot=cdc \
 //             -p /dev/cu.wchusbserial* firmware/fft_bench
@@ -96,15 +103,17 @@ static void put_u32(uint8_t *p, uint32_t v) {
 }
 
 static void reply(uint8_t status, uint8_t log2n, uint32_t fft_min, uint32_t fft_avg,
-                  uint32_t extra, uint32_t clk_mhz, const int16_t *data, int n) {
-  uint8_t hdr[24];
+                  uint32_t extra, uint32_t clk_mhz, const int16_t *data, int n,
+                  const uint32_t *split = nullptr, uint8_t n_split = 0) {
+  uint8_t hdr[24 + 4 * 8];
   memcpy(hdr, REP_MAGIC, 4);
-  hdr[4] = status; hdr[5] = log2n; hdr[6] = data ? 1 : 0; hdr[7] = 0;
+  hdr[4] = status; hdr[5] = log2n; hdr[6] = data ? 1 : 0; hdr[7] = n_split;
   put_u32(hdr + 8, fft_min);
   put_u32(hdr + 12, fft_avg);
   put_u32(hdr + 16, extra);
   put_u32(hdr + 20, clk_mhz);
-  Serial0.write(hdr, sizeof hdr);
+  for (int k = 0; k < n_split; k++) put_u32(hdr + 24 + 4 * k, split[k]);
+  Serial0.write(hdr, 24 + 4 * n_split);
   size_t len = data ? 4 * (size_t)n : 0;
   if (len) Serial0.write((const uint8_t *)data, len);
   uint16_t s = data ? byte_sum((const uint8_t *)data, len) : 0;
@@ -129,7 +138,7 @@ static bool find_magic() {
 
 // One request/reply with the FPGA (protocol: header of fpga_fft/src/top.v).
 // Sends input[] (1024 points), receives into work[]. Returns a status code.
-static uint8_t fpga_exchange(char cmd, uint32_t &cycles, uint32_t &round_us) {
+static uint8_t fpga_exchange(char cmd, uint32_t &cycles, uint32_t &round_us, uint32_t stamps[5]) {
   const size_t len = 4u << FPGA_LOG2N;
   while (Serial1.available()) Serial1.read();  // drop anything stale
   const uint8_t hdr[3] = {0xA5, 0x5A, (uint8_t)cmd};
@@ -145,12 +154,14 @@ static uint8_t fpga_exchange(char cmd, uint32_t &cycles, uint32_t &round_us) {
     uint8_t b = Serial1.read();
     m = (b == (m ? 0xA5 : 0x5A)) ? m + 1 : (b == 0x5A ? 1 : 0);
   }
-  uint8_t h[7], tail[2];                       // status, cycles:u32, rx_sum:u16
-  if (!read_exact(Serial1, h, 7, 50)) return 5;
+  uint8_t h[27], tail[2];                      // status, cycles:u32, rx_sum:u16, 5 stamps:u32
+  if (!read_exact(Serial1, h, 27, 50)) return 5;
   if (h[0] == 0 && !read_exact(Serial1, (uint8_t *)work, len, 50)) return 5;
   if (!read_exact(Serial1, tail, 2, 50)) return 5;
   round_us = micros() - t0;
-  cycles = h[1] | h[2] << 8 | h[3] << 16 | (uint32_t)h[4] << 24;
+  auto u32 = [&](int i) { return h[i] | h[i + 1] << 8 | h[i + 2] << 16 | (uint32_t)h[i + 3] << 24; };
+  cycles = u32(1);
+  for (int k = 0; k < 5; k++) stamps[k] = u32(7 + 4 * k);
   if (h[0] != 0) return 8;
   if ((uint16_t)(h[5] | h[6] << 8) != byte_sum((const uint8_t *)input, len)) return 6;
   if ((uint16_t)(tail[0] | tail[1] << 8) != byte_sum((const uint8_t *)work, len)) return 7;
@@ -193,26 +204,32 @@ void loop() {
   }
 
   if (to_fpga) {
-    uint32_t cycles = 0, round_us = 0;
-    uint8_t st = fpga_exchange(cmd, cycles, round_us);
-    reply(st, log2n, cycles, cycles, round_us, FPGA_CLK_MHZ, st == 0 ? work : nullptr, n);
+    uint32_t cycles = 0, round_us = 0, stamps[5] = {0};
+    uint8_t st = fpga_exchange(cmd, cycles, round_us, stamps);
+    reply(st, log2n, cycles, cycles, round_us, FPGA_CLK_MHZ, st == 0 ? work : nullptr, n,
+          stamps, 5);
     return;
   }
 
-  uint32_t best = UINT32_MAX;
-  uint64_t total = 0;
+  uint32_t best_copy = UINT32_MAX, best_fft = UINT32_MAX, best_rev = UINT32_MAX,
+           best_run = UINT32_MAX;
+  uint64_t fft_sum = 0;
   esp_err_t err = ESP_OK;
   for (int r = 0; r < REPEATS; r++) {
-    memcpy(work, input, len);                  // fresh input every run: FFT is in place
     uint32_t c0 = esp_cpu_get_cycle_count();
+    memcpy(work, input, len);                  // step 1: fresh input (the FFT is in place)
+    uint32_t c1 = esp_cpu_get_cycle_count();
     err = (cmd == 'A') ? dsps_fft2r_sc16_ansi(work, n) : dsps_fft2r_sc16(work, n);
-    uint32_t c = esp_cpu_get_cycle_count() - c0;
-    if (c < best) best = c;
-    total += c;
+    uint32_t c2 = esp_cpu_get_cycle_count();   // step 2: the FFT butterflies
+    dsps_bit_rev_sc16_ansi(work, n);           // step 3: to natural order, like the FPGA
+    uint32_t c3 = esp_cpu_get_cycle_count();
+    best_copy = min(best_copy, c1 - c0);
+    best_fft  = min(best_fft,  c2 - c1);
+    best_rev  = min(best_rev,  c3 - c2);
+    best_run  = min(best_run,  c3 - c0);
+    fft_sum  += c2 - c1;
   }
-  uint32_t c0 = esp_cpu_get_cycle_count();
-  dsps_bit_rev_sc16_ansi(work, n);             // to natural order, like the FPGA
-  uint32_t bitrev = esp_cpu_get_cycle_count() - c0;
-
-  reply(err == ESP_OK ? 0 : 4, log2n, best, (uint32_t)(total / REPEATS), bitrev, mhz, work, n);
+  const uint32_t split[2] = {best_copy, best_run};
+  reply(err == ESP_OK ? 0 : 4, log2n, best_fft, (uint32_t)(fft_sum / REPEATS), best_rev, mhz,
+        work, n, split, 2);
 }
