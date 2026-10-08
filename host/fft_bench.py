@@ -21,7 +21,9 @@ Each device result is judged twice:
                        Mac -> ESP32 -> FPGA -> back, R times each, and must come
                        back byte for byte; saved to data/fft/f2-fpga-echo.csv
 
-    (F3 adds 'fpga': same signals, same scoring.)
+    fpga               F3: every signal through the Gowin FFT core on the Tang Nano
+                       20K (via the ESP32), same scoring as the ESP32, timed by the
+                       FPGA's own cycle counter; saved to data/fft/f3-fpga-gowin.csv
 """
 
 from __future__ import annotations
@@ -337,6 +339,57 @@ def fpga_echo(port: str | None, baud: int, repeats: int) -> bool:
     return passed
 
 
+def fpga(port: str | None, baud: int) -> bool:
+    """F3: the Gowin FFT core, judged exactly like the ESP32 (same signals, same gate)."""
+    port = port or find_port(("/dev/cu.wchusbserial*",))
+    dev = Device(port, baud)
+    if dev.ping()["status"] != 0:
+        sys.exit("ESP32 not ready")
+    n = FPGA_N
+    floor = fm.noise_floor(n)
+    print(f"Gowin FFT IP on the Tang Nano 20K (via ESP32 on {port}), N = {n}")
+    print(f"  (best possible 16-bit design: {floor:.3f} LSB rms on noise)")
+    print(f"  {'signal':<14}{'verdict':>9}{'rms err':>9}{'max err':>9}"
+          f"{'peaks':>7}{'vs best':>9}{'cycles':>8}")
+    rows, all_ok, cycles = [], True, set()
+    for s in fm.make_signals(n) + [fm.overload_signal(n)]:
+        r, i, meta = dev.fft(s, b"F")
+        sc = fm.score(r, i, s)
+        scored = s.name != "overload"
+        ok = fm.is_correct(sc)
+        if scored:
+            all_ok &= ok
+        cycles.add(meta["fft_min"])
+        verdict = ("CORRECT" if ok else "WRONG") if scored else "(info)"
+        pk = "-" if sc.peaks_ok is None else ("ok" if sc.peaks_ok else "WRONG")
+        vs = (f"{fm.db_above_ideal(sc, floor):+8.1f}dB"
+              if s.name in ("noise", "tone_off_bin") else "")
+        print(f"  {s.name:<14}{verdict:>9}{sc.rms_err_lsb:9.3f}{sc.max_err_lsb:9.2f}"
+              f"{pk:>7}{vs:>9}{meta['fft_min']:8d}")
+        rows.append(dict(device="gowin-fft-20k", n=n, signal=s.name, correct=ok if scored else "",
+                         rms_err_lsb=round(sc.rms_err_lsb, 4),
+                         max_err_lsb=round(sc.max_err_lsb, 3),
+                         sqnr_db=round(sc.sqnr_db, 2), peaks_ok=sc.peaks_ok,
+                         fft_cycles=meta["fft_min"], clk_mhz=meta["cpu_mhz"],
+                         round_trip_us=meta["bitrev"]))
+    mhz = meta["cpu_mhz"]
+    c = max(cycles)
+    print(f"  time: {c} cycles at {mhz} MHz = {c / mhz:.1f} us, start to last result "
+          f"(load + compute + unload, natural order)"
+          + ("" if len(cycles) == 1 else f"; varied {min(cycles)}..{max(cycles)}"))
+    print(f"  ESP32 <-> FPGA round trip (UART, not the FFT): {meta['bitrev'] / 1000:.1f} ms")
+
+    DATA.mkdir(parents=True, exist_ok=True)
+    out = DATA / "f3-fpga-gowin.csv"
+    with out.open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=rows[0].keys())
+        w.writeheader()
+        w.writerows(rows)
+    print(f"\nH1 (the Gowin core is a correct FFT): {'PASS' if all_ok else 'FAIL'}")
+    print(f"saved {out.relative_to(ROOT)}")
+    return all_ok
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -349,6 +402,9 @@ def main() -> int:
     e.add_argument("--port")
     e.add_argument("--baud", type=int, default=2_000_000)
     e.add_argument("--impl", choices=IMPLS, default="simd")
+    fp = sub.add_parser("fpga")
+    fp.add_argument("--port")
+    fp.add_argument("--baud", type=int, default=2_000_000)
     fe = sub.add_parser("fpga-echo")
     fe.add_argument("-r", "--repeats", type=int, default=10)
     fe.add_argument("--port")
@@ -357,6 +413,8 @@ def main() -> int:
 
     if a.cmd == "selftest":
         return 0 if selftest() else 1
+    if a.cmd == "fpga":
+        return 0 if fpga(a.port, a.baud) else 1
     if a.cmd == "fpga-echo":
         return 0 if fpga_echo(a.port, a.baud, a.repeats) else 1
     if a.cmd == "esp32":

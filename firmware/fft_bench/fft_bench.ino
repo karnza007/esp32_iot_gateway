@@ -27,6 +27,7 @@
 //   cmd   'L' = run the FFT here (dsps_fft2r_sc16 -> the S3 SIMD version)
 //         'A' = run the plain-C version (dsps_fft2r_sc16_ansi), same library
 //         'E' = pass the signal to the FPGA, which echoes it back (F2; N = 1024 only)
+//         'F' = pass the signal to the FPGA, which runs the Gowin FFT core (F3; N = 1024)
 //         'P' = ping (no payload either way)
 //   payload   N x (re:int16, im:int16) = 4N bytes;  sum = byte sum of payload
 //   fft_min/avg  cycles of the FFT, in clocks of clk_mhz (ESP32 CPU, or FPGA 27 MHz)
@@ -174,7 +175,7 @@ void loop() {
   uint8_t cmd = hdr[0], log2n = hdr[1];
 
   const uint32_t mhz = getCpuFrequencyMhz();
-  const bool to_fpga = (cmd == 'E');
+  const bool to_fpga = (cmd == 'E' || cmd == 'F');
   if (cmd == 'P') { reply(dsp_ready ? 0 : 4, MAX_LOG2N, 0, 0, 0, mhz, nullptr, 0); return; }
   if (cmd != 'L' && cmd != 'A' && !to_fpga) { reply(3, log2n, 0, 0, 0, mhz, nullptr, 0); return; }
   if (log2n < 2 || log2n > MAX_LOG2N || (to_fpga && log2n != FPGA_LOG2N)) {

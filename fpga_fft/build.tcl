@@ -2,6 +2,7 @@
 set_device -name GW2AR-18C GW2AR-LV18QN88C8/I7
 add_file src/top.v
 add_file src/uart_rx.v
+add_file src/fft/fft_1024.v
 add_file ../fpga/src/uart_tx.v
 add_file src/top.cst
 add_file src/top.sdc
