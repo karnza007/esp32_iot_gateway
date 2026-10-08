@@ -498,3 +498,27 @@ dedicated global-clock pin, so the clock reaches the global network over general
   1.821 LSB, 65.1 µs), so nothing regressed.
 
 **So in F3, any error in the spectrum belongs to the FFT core, not to the transport.**
+
+## 11. F3 — the Gowin FFT core on the Tang Nano 20K
+
+Full write-up with tables and interpretation: `docs/reports/2026-10-11.md`, Part B. Key facts:
+
+| | Result |
+|---|---|
+| Design | `fpga_fft/src/top.v` command `'F'`: the shared 1024×32 buffer feeds `fft_1024` and receives its results; cycle counter from `start` to `eoud`; 39 ms watchdog |
+| Driving the core | Gowin IPUG503 Figure 6-1: `start` pulse; sample `idx` supplied while `ipd` is high (the RAM is addressed with `idx + 1` one clock ahead, because it answers one clock later); result stored at `idx` while `opd` is high |
+| Correct (4 LSB gate) | **7 / 8** at N = 1024. Original 2 LSB gate: 4 / 8 |
+| RMS error on noise | **2.184 LSB** (+14.2 dB over the best possible 0.427). ESP32 SIMD 1.821, plain C 0.455 |
+| **Full-scale square wave** | **Wrong** (1023.8 LSB rms). Inputs near −32768 wrap inside the core; see the threshold table in the report |
+| Time | **7,190 cycles = 266.3 µs** at 27 MHz, start to last result (identical on every signal) |
+| Resources | 1,426 logic (7 %), 480 registers, 8 / 46 BSRAM (2 SDPB + 4 DPB + 2 pROM), 2 / 24 DSP, Fmax 80.6 MHz |
+
+```bash
+fpga_fft/build.sh program          # build + load the FPGA (SRAM)
+python host/fft_bench.py fpga      # -> data/fft/f3-fpga-gowin.csv
+```
+
+**Note on F2's LED 3.** After bring-up, LED 3 (UART framing error) was found lit once. Reprogramming
+cleared it; an ESP32 reset alone and a full echo run did not light it again. All frames were
+unaffected (byte count + two checksums). Most likely a one-time setup event (ESP32 flashing or
+wire handling).
