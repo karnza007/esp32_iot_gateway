@@ -1,13 +1,16 @@
-// top_hdmi.v — HDMI demo build (docs/plans/hdmi-demo.md). Step H1: colour test pattern.
+// top_hdmi.v — HDMI demo build (docs/plans/hdmi-demo.md). Step H2: spectrum of a test tone.
 //   DESIGN=hdmi fpga_fft/build.sh
 //
 //   27 MHz crystal ─▶ rPLL ×55÷4 ─▶ 371.25 MHz ─────────────▶ serializers only (fclk)
-//                                       └─▶ CLKDIV ÷5 ─▶ 74.25 MHz (pclk) ─▶ the picture chain
+//                                       └─▶ CLKDIV ÷5 ─▶ 74.25 MHz (pclk) ─▶ tone, FFT, bars, picture
 //   27 MHz crystal ──────────────────────────────────────────▶ ESP32 UART benchmark (unchanged)
 //
 // The two halves share nothing but the crystal: the benchmark keeps working while the
 // monitor shows the picture.
-module top_hdmi (
+module top_hdmi #(
+    parameter integer GAIN_SHIFT = 0,      // input boost, 2^GAIN_SHIFT (for the microphone, H3)
+    parameter integer CLAMP      = 32700   // input limit before the FFT (see spectrum.v)
+)(
     input  wire       clk,         // 27 MHz crystal, pin 4
     input  wire       uart_rx,     // ESP32 benchmark, unchanged
     output wire       uart_tx,
@@ -27,7 +30,9 @@ module top_hdmi (
         else if (!vrst_cnt[4])  vrst_cnt <= vrst_cnt + 1'b1;
     wire vrst = !vrst_cnt[4];
 
-    video_h1 u_video (.pclk(pclk), .fclk(fclk), .rst(vrst),
+    wire overrun;
+    video_h2 #(.GAIN_SHIFT(GAIN_SHIFT), .CLAMP(CLAMP)) u_video (
+                      .pclk(pclk), .fclk(fclk), .rst(vrst), .overrun(overrun),
                       .tmds_clk_p(tmds_clk_p), .tmds_clk_n(tmds_clk_n),
                       .tmds_d_p(tmds_d_p), .tmds_d_n(tmds_d_n));
 
@@ -36,6 +41,7 @@ module top_hdmi (
     fft_link #(.CLK_MHZ(27)) u_link (
         .clk(clk), .clk_ok(1'b1), .uart_rx(uart_rx), .uart_tx(uart_tx), .led(led_link));
 
-    // LEDs (lit when low): 0-4 as in the benchmark, 5 = video PLL locked
-    assign led = {~locked, led_link[4:0]};
+    // LEDs (lit when low): 0-3 as in the benchmark, 4 = FFT overrun (should stay off),
+    // 5 = video PLL locked
+    assign led = {~locked, ~overrun, led_link[3:0]};
 endmodule

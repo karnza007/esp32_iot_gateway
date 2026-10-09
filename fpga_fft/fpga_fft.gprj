@@ -14,6 +14,12 @@
         <File path="src/hdmi/tmds_encoder.v" type="file.verilog" enable="1"/>
         <File path="src/hdmi/hdmi_out.v" type="file.verilog" enable="1"/>
         <File path="src/hdmi/video_h1.v" type="file.verilog" enable="1"/>
+        <File path="src/hdmi/tone_gen.v" type="file.verilog" enable="1"/>
+        <File path="src/hdmi/spectrum.v" type="file.verilog" enable="1"/>
+        <File path="src/hdmi/bar_display.v" type="file.verilog" enable="1"/>
+        <File path="src/hdmi/video_h2.v" type="file.verilog" enable="1"/>
+        <File path="src/hdmi/rom_sine.v" type="file.verilog" enable="1"/>
+        <File path="src/hdmi/rom_hann.v" type="file.verilog" enable="1"/>
         <File path="src/pll_clk.v" type="file.verilog" enable="1"/>
         <File path="src/fft_link.v" type="file.verilog" enable="1"/>
         <File path="src/uart_rx.v" type="file.verilog" enable="1"/>
