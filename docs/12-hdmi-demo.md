@@ -7,7 +7,7 @@ microphone → Tang Nano 20K → Gowin FFT → spectrum on a monitor over the bo
 |---|---|---|
 | **H1** | Colour test pattern at 1280×720, 60 Hz | ✅ 2026-10-09 |
 | **H2** | Spectrum of a test tone generated inside the FPGA | ✅ 2026-10-09 |
-| H3 | Live spectrum from the INMP441 microphone | — |
+| H3 | Live spectrum from the INMP441 microphone | ⏳ built + simulated; mic connection unstable |
 | H4 | Gridlines, kHz/dB labels, peak readout | — |
 
 ---
@@ -213,3 +213,41 @@ generated), and a testbench that stopped before the FFT's mirror half was out.
 | Pixel clock | needs 74.25 MHz, met up to 81.5 MHz |
 | ESP32 benchmark in the same build | passes |
 | **Monitor** | **the tone sweeps across the screen as designed** ✅ |
+
+---
+
+## 5. H3: the live microphone (in progress)
+
+### 5.1 Two ways in, both selectable with button S1
+
+| Source | Path | Modules |
+|---|---|---|
+| ESP32 relay (default) | INMP441 → ESP32 I2S → UART 2.97 Mbaud (GPIO17 → pin 27) → FPGA | `firmware/mic_relay`, `relay_rx.v` |
+| Test tone | as in H2 | `tone_gen.v` |
+| Direct | INMP441 → FPGA pins 25 (SCK), 26 (WS), 29 (SD) | `mic_source.v` + `fpga/src/i2s_master_rx.v` (new 24-bit output) |
+
+Both microphone paths use `gain24.v`: the 16-bit sample is a window of the 24-bit word, moved
+down 0…7 bits (+0…+42 dB, button S2, start +24 dB), saturated, then clamped to ±32,700.
+Relay packet: `B5 6A | seq | 32 × 24-bit (LE) | sum16` = 101 bytes, 1,500 /s, 51 % of the link;
+a packet with a wrong sum is dropped, one that stalls 1 ms is abandoned.
+
+### 5.2 Verified in simulation
+
+| Test | Result |
+|---|---|
+| `tb_h3_mic`: the audio project's INMP441 model, 8 gain copies | bit-exact incl. saturation; SCK exactly 24 clocks (3.09 MHz), a sample every 1,536 clocks |
+| `tb_h3_relay`: packets at the ESP32's real baud (2,969,838) | 192 / 192 samples bit-exact; corrupted packet dropped; half packet abandoned |
+| `fpga/sim/run_sims.sh` (audio project, shared `i2s_master_rx`) | all pass |
+
+### 5.3 On the hardware: the microphone connection is unstable
+
+| Observation | Meaning |
+|---|---|
+| Direct path: SD never high (diagnostic LEDs) | the mic never started |
+| ESP32 `mic_test`: data alternates between clean audio, silence and scrambled words | the mic keeps restarting: its clock or power keeps dropping for moments |
+| After re-seating the wires: clean 220 Hz / 1 kHz in `inmp441_viewer.py` | the mic itself works |
+| Later, same firmware: scrambled again (correlation +0.4) | the contact loosened again |
+
+Changes made for margin: FPGA SCK/WS drive 4 mA (weakest), ESP32 SCK/WS weakest drive, SD
+pull-down on both (INMP441 datasheet). **Next:** solder the module's header pins, use short
+wires, or try another module; then test both paths on the monitor.

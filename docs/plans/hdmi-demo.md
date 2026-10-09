@@ -1,6 +1,6 @@
 # HDMI demo — live microphone spectrum on a monitor
 
-**Status:** H1 ✅, H2 ✅ 2026-10-09 (results: `docs/12-hdmi-demo.md`). H3 next.
+**Status:** H1 ✅, H2 ✅ 2026-10-09; H3 built + simulated, blocked by an unstable microphone connection (results: `docs/12-hdmi-demo.md` §5).
 **Requested by:** the advisor, after the FFT benchmark progress report.
 
 ---
