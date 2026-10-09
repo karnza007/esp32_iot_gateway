@@ -546,5 +546,5 @@ Method, diagrams and full tables: `docs/reports/2026-10-11.md` §8. N = 1024:
 `fpga_fft/sim/tb_fft.v` + `src/fft/fft_1024.vo` (unencrypted gate-level model) + Gowin's
 `IDE/simlib/gw2a/prim_sim.v`, compiled with Icarus Verilog (`iverilog -g2012 -s tb_fft`). The
 testbench needs a `GSR` instance (the library's flip-flops reference `GSR.GSRO`). Result: phase
-stamps and rms/max error on all 9 signals identical to the board. Run: `python host/fft_bench.py
+stamps identical to the board, and every output bit-for-bit identical on all 9 signals (`sim --board`). Run: `python host/fft_bench.py
 sim [--board]` → `data/fft/f3-sim-gowin.csv`. Full write-up: weekly report §10.
