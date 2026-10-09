@@ -10,6 +10,7 @@ add_file src/pll_clk.v
 add_file src/uart_rx.v
 add_file src/fft/fft_1024.v
 add_file ../fpga/src/uart_tx.v
+add_file ../fpga/src/i2s_master_rx.v
 add_file $CST
 foreach f [glob -nocomplain src/hdmi/*.v] { add_file $f }
 add_file $SDC

@@ -37,6 +37,7 @@ module i2s_master_rx #(
     input  wire        i2s_sd,        // serial data <- mic
     // parallel sample out
     output reg  [15:0] sample,        // top 16 of the 24-bit left word (signed)
+    output reg  [23:0] sample24,      // the full 24-bit left word (HDMI demo: gain picks from it)
     output reg         sample_valid   // 1-cycle strobe, one per WS frame
 );
     // ------------------------------------------------------------------
@@ -99,6 +100,7 @@ module i2s_master_rx #(
         if (!rst_n) begin
             word24       <= 24'd0;
             sample       <= 16'd0;
+            sample24     <= 24'd0;
             sample_valid <= 1'b0;
         end else begin
             sample_valid <= 1'b0;
@@ -107,6 +109,7 @@ module i2s_master_rx #(
             // latch once the 24th data bit of this frame has been captured
             if (period_end && (bit_cnt == CAP_START + 23)) begin
                 sample       <= word24[23:8];             // keep MSB 16, drop low 8
+                sample24     <= word24;
                 sample_valid <= 1'b1;
             end
         end

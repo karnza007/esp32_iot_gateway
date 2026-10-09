@@ -1,20 +1,30 @@
-// top_hdmi.v — HDMI demo build (docs/plans/hdmi-demo.md). Step H2: spectrum of a test tone.
+// top_hdmi.v — HDMI demo build (docs/plans/hdmi-demo.md). Step H3: live microphone spectrum.
+//
+// CONTROLS (the board's two buttons)
+//   pin 88 button: switch the source, microphone <-> H2 test tone   (starts on microphone)
+//   pin 87 button: gain +6 dB, 0 -> +42 dB, then back to 0          (starts at +24 dB)
+// LEDs (lit when low): 0-2 = gain step in binary (0..7), 3 = microphone selected,
+//   4 = FFT overrun (should stay off), 5 = video PLL locked
 //   DESIGN=hdmi fpga_fft/build.sh
 //
 //   27 MHz crystal ─▶ rPLL ×55÷4 ─▶ 371.25 MHz ─────────────▶ serializers only (fclk)
-//                                       └─▶ CLKDIV ÷5 ─▶ 74.25 MHz (pclk) ─▶ tone, FFT, bars, picture
+//                                       └─▶ CLKDIV ÷5 ─▶ 74.25 MHz (pclk) ─▶ mic/tone, FFT, bars, picture
 //   27 MHz crystal ──────────────────────────────────────────▶ ESP32 UART benchmark (unchanged)
 //
 // The two halves share nothing but the crystal: the benchmark keeps working while the
 // monitor shows the picture.
 module top_hdmi #(
-    parameter integer GAIN_SHIFT = 0,      // input boost, 2^GAIN_SHIFT (for the microphone, H3)
-    parameter integer CLAMP      = 32700   // input limit before the FFT (see spectrum.v)
+    parameter integer   CLAMP      = 32700, // input limit before the FFT (see spectrum.v)
+    parameter [2:0]     GAIN_START = 3'd4   // microphone gain at power-up: 4 steps = +24 dB
 )(
     input  wire       clk,         // 27 MHz crystal, pin 4
     input  wire       uart_rx,     // ESP32 benchmark, unchanged
     output wire       uart_tx,
     output wire [5:0] led,
+    output wire       i2s_sck,     // INMP441 SCK, pin 25
+    output wire       i2s_ws,      // INMP441 WS,  pin 26
+    input  wire       i2s_sd,      // INMP441 SD,  pin 29
+    input  wire [1:0] btn,         // [0] = pin 88 (source), [1] = pin 87 (gain)
     output wire       tmds_clk_p, tmds_clk_n,
     output wire [2:0] tmds_d_p, tmds_d_n
 );
@@ -30,9 +40,21 @@ module top_hdmi #(
         else if (!vrst_cnt[4])  vrst_cnt <= vrst_cnt + 1'b1;
     wire vrst = !vrst_cnt[4];
 
-    wire overrun;
-    video_h2 #(.GAIN_SHIFT(GAIN_SHIFT), .CLAMP(CLAMP)) u_video (
-                      .pclk(pclk), .fclk(fclk), .rst(vrst), .overrun(overrun),
+    // buttons -> source and gain
+    wire [1:0] pressed;
+    buttons u_btn (.clk(pclk), .btn(btn), .pressed(pressed));
+    reg       use_mic = 1'b1;
+    reg [2:0] gain    = GAIN_START;
+    always @(posedge pclk) begin
+        if (pressed[0]) use_mic <= ~use_mic;
+        if (pressed[1]) gain    <= gain + 1'b1;          // wraps 7 -> 0
+    end
+
+    wire overrun, clipped;
+    video_h3 #(.CLAMP(CLAMP)) u_video (
+                      .pclk(pclk), .fclk(fclk), .rst(vrst), .use_mic(use_mic), .gain(gain),
+                      .i2s_sck(i2s_sck), .i2s_ws(i2s_ws), .i2s_sd(i2s_sd),
+                      .overrun(overrun), .clipped(clipped),
                       .tmds_clk_p(tmds_clk_p), .tmds_clk_n(tmds_clk_n),
                       .tmds_d_p(tmds_d_p), .tmds_d_n(tmds_d_n));
 
@@ -41,7 +63,6 @@ module top_hdmi #(
     fft_link #(.CLK_MHZ(27)) u_link (
         .clk(clk), .clk_ok(1'b1), .uart_rx(uart_rx), .uart_tx(uart_tx), .led(led_link));
 
-    // LEDs (lit when low): 0-3 as in the benchmark, 4 = FFT overrun (should stay off),
-    // 5 = video PLL locked
-    assign led = {~locked, ~overrun, led_link[3:0]};
+    // LEDs (lit when low): see the header. The benchmark still runs; its LEDs are not shown.
+    assign led = {~locked, ~overrun, ~use_mic, ~gain};
 endmodule

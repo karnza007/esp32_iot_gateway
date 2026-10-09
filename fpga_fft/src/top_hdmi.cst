@@ -29,3 +29,17 @@ IO_LOC "tmds_d_p[1]" 37,38;
 IO_PORT "tmds_d_p[1]" IO_TYPE=LVDS25 PULL_MODE=NONE DRIVE=3.5 BANK_VCCIO=3.3;
 IO_LOC "tmds_d_p[2]" 39,40;
 IO_PORT "tmds_d_p[2]" IO_TYPE=LVDS25 PULL_MODE=NONE DRIVE=3.5 BANK_VCCIO=3.3;
+
+// INMP441 microphone (H3) — header pins next to the ESP32 UART (27/28)
+IO_LOC "i2s_sck" 25;
+IO_PORT "i2s_sck" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_LOC "i2s_ws" 26;
+IO_PORT "i2s_ws" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_LOC "i2s_sd" 29;
+IO_PORT "i2s_sd" IO_TYPE=LVCMOS33 PULL_MODE=DOWN;   // the mic lets SD float in the right-channel half
+
+// the board's two push buttons (read 1 while pressed; pins as in Sipeed's 20K examples)
+IO_LOC "btn[0]" 88;
+IO_PORT "btn[0]" IO_TYPE=LVCMOS33 PULL_MODE=DOWN;
+IO_LOC "btn[1]" 87;
+IO_PORT "btn[1]" IO_TYPE=LVCMOS33 PULL_MODE=DOWN;

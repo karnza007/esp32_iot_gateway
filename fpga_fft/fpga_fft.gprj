@@ -18,6 +18,10 @@
         <File path="src/hdmi/spectrum.v" type="file.verilog" enable="1"/>
         <File path="src/hdmi/bar_display.v" type="file.verilog" enable="1"/>
         <File path="src/hdmi/video_h2.v" type="file.verilog" enable="1"/>
+        <File path="src/hdmi/mic_source.v" type="file.verilog" enable="1"/>
+        <File path="src/hdmi/buttons.v" type="file.verilog" enable="1"/>
+        <File path="src/hdmi/video_h3.v" type="file.verilog" enable="1"/>
+        <File path="../fpga/src/i2s_master_rx.v" type="file.verilog" enable="1"/>
         <File path="src/hdmi/rom_sine.v" type="file.verilog" enable="1"/>
         <File path="src/hdmi/rom_hann.v" type="file.verilog" enable="1"/>
         <File path="src/pll_clk.v" type="file.verilog" enable="1"/>
