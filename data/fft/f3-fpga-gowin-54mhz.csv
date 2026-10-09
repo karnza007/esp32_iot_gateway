@@ -1,0 +1,10 @@
+device,n,signal,correct,rms_err_lsb,max_err_lsb,sqnr_db,peaks_ok,fft_cycles,clk_mhz,round_trip_us,setup_cycles,load_cycles,compute_cycles,unload_cycles,total_cycles,busy_rise_cycles,busy_fall_cycles,busy_cycles
+gowin-fft-20k,1024,impulse,True,0.0007,0.001,90.31,,7190,54,82620,1,1024,5141,1024,7190,1025,6165,5140
+gowin-fft-20k,1024,dc,True,0.0,0.0,inf,True,7190,54,82625,1,1024,5141,1024,7190,1025,6165,5140
+gowin-fft-20k,1024,tone_on_bin,True,2.3299,10.032,40.82,True,7190,54,82626,1,1024,5141,1024,7190,1025,6165,5140
+gowin-fft-20k,1024,tone_off_bin,True,2.0545,8.181,41.91,,7190,54,82623,1,1024,5141,1024,7190,1025,6165,5140
+gowin-fft-20k,1024,two_tones,True,1.7991,11.982,37.31,True,7190,54,82621,1,1024,5141,1024,7190,1025,6165,5140
+gowin-fft-20k,1024,noise,True,2.1835,7.568,45.63,,7190,54,82621,1,1024,5141,1024,7190,1025,6165,5140
+gowin-fft-20k,1024,full_scale,False,1023.778,32767.0,-3.01,,7190,54,82627,1,1024,5141,1024,7190,1025,6165,5140
+gowin-fft-20k,1024,complex_tone,True,1.8658,10.005,45.76,True,7190,54,82622,1,1024,5141,1024,7190,1025,6165,5140
+gowin-fft-20k,1024,overload,,1442.7771,41095.109,-2.98,,7190,54,82618,1,1024,5141,1024,7190,1025,6165,5140

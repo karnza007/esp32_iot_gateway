@@ -6,7 +6,7 @@
 //   Mac (host/fft_bench.py) ──CH9102, 2 Mbaud──▶ Serial0 ──▶ dsps_fft2r_sc16
 //                           ◀────────────────── result + cycle counts
 //
-// It is also the go-between for the FPGA (Tang Nano 20K, fpga_fft/src/top.v):
+// It is also the go-between for the FPGA (Tang Nano 20K, fpga_fft/src/fft_link.v):
 //
 //   Mac ──2 Mbaud──▶ Serial0 ─▶ Serial1 GPIO17 ──1 Mbaud──▶ FPGA pin 27
 //   Mac ◀─────────── Serial0 ◀─ Serial1 GPIO18 ◀──────────── FPGA pin 28
@@ -36,7 +36,8 @@
 //   split     the TIME SPLIT, in clocks of clk_mhz:
 //             'L'/'A': copy_min, total_min (fft_min and extra are the other two steps)
 //             'E'/'F': the FPGA's phase stamps sod, eod, busy rise, busy fall, soud
-//                      (see fpga_fft/src/top.v)
+//                      (see fpga_fft/src/fft_link.v); clk_mhz = the FPGA's own clock,
+//                      which it reports in every reply (27, or 54 with the PLL)
 //   status    0 ok, 1 bad checksum, 2 bad size, 3 bad command, 4 FFT error,
 //             5 FPGA did not reply, 6 data reached the FPGA corrupted,
 //             7 FPGA's reply arrived corrupted, 8 FPGA rejected the command
@@ -65,7 +66,6 @@ constexpr uint32_t FPGA_BAUD    = 1000000;
 constexpr int      FPGA_RX_PIN  = 18;          // <- FPGA pin 28 (its TX)
 constexpr int      FPGA_TX_PIN  = 17;          // -> FPGA pin 27 (its RX)
 constexpr int      FPGA_LOG2N   = 10;
-constexpr uint32_t FPGA_CLK_MHZ = 27;
 
 // The S3's vector instructions load 16 bytes at a time and need 16-byte alignment.
 alignas(16) static int16_t input[2 * MAX_N];
@@ -136,9 +136,10 @@ static bool find_magic() {
   return false;
 }
 
-// One request/reply with the FPGA (protocol: header of fpga_fft/src/top.v).
+// One request/reply with the FPGA (protocol: header of fpga_fft/src/fft_link.v).
 // Sends input[] (1024 points), receives into work[]. Returns a status code.
-static uint8_t fpga_exchange(char cmd, uint32_t &cycles, uint32_t &round_us, uint32_t stamps[5]) {
+static uint8_t fpga_exchange(char cmd, uint32_t &cycles, uint32_t &round_us, uint32_t stamps[5],
+                             uint32_t &clk_mhz) {
   const size_t len = 4u << FPGA_LOG2N;
   while (Serial1.available()) Serial1.read();  // drop anything stale
   const uint8_t hdr[3] = {0xA5, 0x5A, (uint8_t)cmd};
@@ -154,14 +155,15 @@ static uint8_t fpga_exchange(char cmd, uint32_t &cycles, uint32_t &round_us, uin
     uint8_t b = Serial1.read();
     m = (b == (m ? 0xA5 : 0x5A)) ? m + 1 : (b == 0x5A ? 1 : 0);
   }
-  uint8_t h[27], tail[2];                      // status, cycles:u32, rx_sum:u16, 5 stamps:u32
-  if (!read_exact(Serial1, h, 27, 50)) return 5;
+  uint8_t h[28], tail[2];                      // status, cycles:u32, rx_sum:u16, 5 stamps:u32, clk:u8
+  if (!read_exact(Serial1, h, 28, 50)) return 5;
   if (h[0] == 0 && !read_exact(Serial1, (uint8_t *)work, len, 50)) return 5;
   if (!read_exact(Serial1, tail, 2, 50)) return 5;
   round_us = micros() - t0;
   auto u32 = [&](int i) { return h[i] | h[i + 1] << 8 | h[i + 2] << 16 | (uint32_t)h[i + 3] << 24; };
   cycles = u32(1);
   for (int k = 0; k < 5; k++) stamps[k] = u32(7 + 4 * k);
+  clk_mhz = h[27];
   if (h[0] != 0) return 8;
   if ((uint16_t)(h[5] | h[6] << 8) != byte_sum((const uint8_t *)input, len)) return 6;
   if ((uint16_t)(tail[0] | tail[1] << 8) != byte_sum((const uint8_t *)work, len)) return 7;
@@ -204,9 +206,9 @@ void loop() {
   }
 
   if (to_fpga) {
-    uint32_t cycles = 0, round_us = 0, stamps[5] = {0};
-    uint8_t st = fpga_exchange(cmd, cycles, round_us, stamps);
-    reply(st, log2n, cycles, cycles, round_us, FPGA_CLK_MHZ, st == 0 ? work : nullptr, n,
+    uint32_t cycles = 0, round_us = 0, stamps[5] = {0}, clk_mhz = 0;
+    uint8_t st = fpga_exchange(cmd, cycles, round_us, stamps, clk_mhz);
+    reply(st, log2n, cycles, cycles, round_us, clk_mhz, st == 0 ? work : nullptr, n,
           stamps, 5);
     return;
   }

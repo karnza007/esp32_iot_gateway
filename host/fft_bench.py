@@ -323,7 +323,7 @@ FPGA_N = 1024                                  # the core is generated for 1024 
 def fpga_echo(port: str | None, baud: int, repeats: int) -> bool:
     """F2: prove the Mac -> ESP32 -> FPGA -> ESP32 -> Mac path loses nothing.
 
-    The FPGA (fpga_fft/src/top.v, echo build) stores the 4096-byte signal in block
+    The FPGA (fpga_fft/src/fft_link.v, command 'E') stores the 4096-byte signal in block
     RAM and sends it back. Besides the real test signals, raw byte patterns cover
     every byte value and the FPGA's own sync bytes (A5 5A) inside the payload.
     """
@@ -428,7 +428,8 @@ def fpga(port: str | None, baud: int) -> bool:
     print(f"  ESP32 <-> FPGA round trip (UART, not the FFT): {meta['bitrev'] / 1000:.1f} ms")
 
     DATA.mkdir(parents=True, exist_ok=True)
-    out = DATA / "f3-fpga-gowin.csv"
+    # the FPGA reports its own clock; the 27 MHz run keeps the original file name
+    out = DATA / ("f3-fpga-gowin.csv" if mhz == 27 else f"f3-fpga-gowin-{mhz}mhz.csv")
     with out.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=rows[0].keys())
         w.writeheader()

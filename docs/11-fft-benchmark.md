@@ -548,3 +548,11 @@ Method, diagrams and full tables: `docs/reports/2026-10-11.md` §8. N = 1024:
 testbench needs a `GSR` instance (the library's flip-flops reference `GSR.GSRO`). Result: phase
 stamps identical to the board, and every output bit-for-bit identical on all 9 signals (`sim --board`). Run: `python host/fft_bench.py
 sim [--board]` → `data/fft/f3-sim-gowin.csv`. Full write-up: weekly report §10.
+
+## 14. 54 MHz build (PLL)
+
+`src/top_54.v` doubles the crystal with the `rPLL` primitive (IDIV 0, FBDIV 1, ODIV 16 → VCO
+864 MHz); `src/top.v` stays at 27 MHz; both wrap the clock-independent `src/fft_link.v`, which
+reports its clock in every reply (FPGA header now 30 bytes). At 54 MHz: echo 650/650, outputs
+bit-identical to 27 MHz, 7,190 cycles = **133.1 µs** (vs 266.3 µs), timing met to 88.3 MHz.
+Build: `MHZ=54 fpga_fft/build.sh program`. Write-up: weekly report §12.
