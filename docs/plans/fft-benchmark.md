@@ -135,7 +135,7 @@ E1 and F1 can run in parallel.
 | Runs continuously without a CPU? | Yes | No | Yes |
 | Resources | LUT / BSRAM / mult | RAM / CPU time | LE / M9K / mult |
 | Largest size that fits | | (4096, library limit) | |
-| Can be simulated with free tools? | No (encrypted) | n/a | |
+| Can be simulated with free tools? | Yes, via the unencrypted gate-level model `.vo` + Icarus (undocumented; report §10) | n/a | |
 | Exact model provided? | No | Open source | Yes (MATLAB) |
 | Time to first working result | | | |
 | Ease-of-use notes | | | |

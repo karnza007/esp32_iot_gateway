@@ -540,3 +540,11 @@ Method, diagrams and full tables: `docs/reports/2026-10-11.md` §8. N = 1024:
 - ESP32: the cycle counter is read between copy, FFT and bit-reverse in each of 20 runs; the
   fastest of each step is reported, and a whole-run timing cross-checks the sum (within 0.1 %).
   The ESP32 → Mac reply carries these as a "split" block (`n_split` × u32 after the header).
+
+## 13. Free simulation of the Gowin core
+
+`fpga_fft/sim/tb_fft.v` + `src/fft/fft_1024.vo` (unencrypted gate-level model) + Gowin's
+`IDE/simlib/gw2a/prim_sim.v`, compiled with Icarus Verilog (`iverilog -g2012 -s tb_fft`). The
+testbench needs a `GSR` instance (the library's flip-flops reference `GSR.GSRO`). Result: phase
+stamps and rms/max error on all 9 signals identical to the board. Run: `python host/fft_bench.py
+sim [--board]` → `data/fft/f3-sim-gowin.csv`. Full write-up: weekly report §10.

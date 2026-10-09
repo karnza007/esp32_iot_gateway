@@ -17,6 +17,12 @@ Each device result is judged twice:
                        saved to data/fft/e1-esp32-<impl>.csv
                        --impl simd (default, the fast one) | ansi (plain C)
 
+    sim [--board]      simulate the Gowin core with free tools (Icarus Verilog + the
+                       core's unencrypted gate-level model fft_1024.vo + Gowin's
+                       primitive library), score it like the hardware, and with
+                       --board compare every output bit with the real FPGA;
+                       saved to data/fft/f3-sim-gowin.csv
+
     fpga-echo [-r R]   F2: every test signal (plus raw byte patterns) goes
                        Mac -> ESP32 -> FPGA -> back, R times each, and must come
                        back byte for byte; saved to data/fft/f2-fpga-echo.csv
@@ -432,6 +438,84 @@ def fpga(port: str | None, baud: int) -> bool:
     return all_ok
 
 
+GOWIN_SIMLIB = Path("/Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE/simlib/gw2a/prim_sim.v")
+
+
+def sim(compare_board: bool, port: str | None, baud: int) -> bool:
+    """Run the Gowin core in Icarus Verilog (fpga_fft/sim/tb_fft.v) on every test signal.
+
+    The encrypted fft_1024.v can't be read by a free simulator; the generator's
+    gate-level model fft_1024.vo is unencrypted, and prim_sim.v describes each
+    building block it uses. With --board, the same signals also go through the real
+    FPGA and the two outputs are compared bin by bin, bit for bit.
+    """
+    import re
+    import subprocess
+    import tempfile
+    tb = ROOT / "fpga_fft" / "sim" / "tb_fft.v"
+    model = ROOT / "fpga_fft" / "src" / "fft" / "fft_1024.vo"
+    work = Path(tempfile.mkdtemp(prefix="fft_sim_"))
+    exe = work / "tb_fft"
+    subprocess.run(["iverilog", "-g2012", "-s", "tb_fft", "-o", str(exe), str(tb), str(model),
+                    str(GOWIN_SIMLIB)], check=True)
+    dev = None
+    if compare_board:
+        dev = Device(port or find_port(("/dev/cu.wchusbserial*",)), baud)
+        if dev.ping()["status"] != 0:
+            sys.exit("ESP32 not ready")
+    n = FPGA_N
+    floor = fm.noise_floor(n)
+    print(f"Gowin FFT core simulated in Icarus Verilog (gate-level model), N = {n}")
+    print(f"  {'signal':<14}{'verdict':>9}{'rms err':>9}{'cycles':>8}{'sim time':>10}"
+          + (f"{'same as board':>16}" if dev else ""))
+    rows, all_ok, all_same = [], True, True
+    for s in fm.make_signals(n) + [fm.overload_signal(n)]:
+        fin, fout = work / "in.hex", work / "out.hex"
+        fin.write_text("".join(f"{(int(i) & 0xFFFF) << 16 | (int(r) & 0xFFFF):08x}\n"
+                               for r, i in zip(s.re, s.im)))
+        t0 = time.time()
+        res = subprocess.run(["vvp", str(exe), f"+in={fin}", f"+out={fout}"],
+                             capture_output=True, text=True, check=True)
+        dt = time.time() - t0
+        st = dict((k, int(v)) for k, v in re.findall(r"(\w+)=(-?\d+)", res.stdout.split("STAMPS", 1)[1]))
+        words = [int(ln, 16) for ln in fout.read_text().splitlines()   # skip "// 0x.." address lines
+                 if ln.strip() and not ln.lstrip().startswith("//")]
+        w = np.array(words, dtype=np.uint32)
+        r = (w & 0xFFFF).astype(np.uint16).view(np.int16)
+        i = (w >> 16).astype(np.uint16).view(np.int16)
+        sc = fm.score(r, i, s)
+        scored = s.name != "overload"
+        ok = fm.is_correct(sc)
+        if scored:
+            all_ok &= ok
+        verdict = ("CORRECT" if ok else "WRONG") if scored else "(info)"
+        same = ""
+        n_diff = None
+        if dev:
+            br, bi, _ = dev.fft(s, b"F")
+            n_diff = int(np.sum((br != r) | (bi != i)))
+            all_same &= n_diff == 0
+            same = "yes, all 1024" if n_diff == 0 else f"NO: {n_diff} bins differ"
+        print(f"  {s.name:<14}{verdict:>9}{sc.rms_err_lsb:9.3f}{st['total']:8d}{dt:9.1f}s"
+              + (f"{same:>16}" if dev else ""))
+        rows.append(dict(device="gowin-fft-sim-icarus", n=n, signal=s.name,
+                         correct=ok if scored else "", rms_err_lsb=round(sc.rms_err_lsb, 4),
+                         max_err_lsb=round(sc.max_err_lsb, 3), total_cycles=st["total"],
+                         sod=st["sod"], eod=st["eod"], busy_rise=st["busy_rise"],
+                         busy_fall=st["busy_fall"], soud=st["soud"], eoud=st["eoud"],
+                         bins_differing_from_board="" if n_diff is None else n_diff))
+    out = DATA / "f3-sim-gowin.csv"
+    with out.open("w", newline="") as f:
+        wr = csv.DictWriter(f, fieldnames=rows[0].keys())
+        wr.writeheader()
+        wr.writerows(rows)
+    print(f"\nsimulation says the core is correct: {'PASS' if all_ok else 'FAIL'}")
+    if dev:
+        print(f"simulation matches the real FPGA bit for bit: {'YES' if all_same else 'NO'}")
+    print(f"saved {out.relative_to(ROOT)}")
+    return all_same if dev else True
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -444,6 +528,10 @@ def main() -> int:
     e.add_argument("--port")
     e.add_argument("--baud", type=int, default=2_000_000)
     e.add_argument("--impl", choices=IMPLS, default="simd")
+    sm = sub.add_parser("sim")
+    sm.add_argument("--board", action="store_true", help="also compare with the real FPGA")
+    sm.add_argument("--port")
+    sm.add_argument("--baud", type=int, default=2_000_000)
     fp = sub.add_parser("fpga")
     fp.add_argument("--port")
     fp.add_argument("--baud", type=int, default=2_000_000)
@@ -455,6 +543,8 @@ def main() -> int:
 
     if a.cmd == "selftest":
         return 0 if selftest() else 1
+    if a.cmd == "sim":
+        return 0 if sim(a.board, a.port, a.baud) else 1
     if a.cmd == "fpga":
         return 0 if fpga(a.port, a.baud) else 1
     if a.cmd == "fpga-echo":
