@@ -1,6 +1,6 @@
 # HDMI demo — live microphone spectrum on a monitor
 
-**Status:** settings confirmed 2026-10-09. H1 planned, waiting for go-ahead.
+**Status:** H1 ✅ done 2026-10-09 (results: `docs/12-hdmi-demo.md`). H2 next.
 **Requested by:** the advisor, after the FFT benchmark progress report.
 
 ---
@@ -65,7 +65,7 @@ PLL: `IDIV_SEL=3, FBDIV_SEL=54, ODIV_SEL=2` → 27 × 55 / 4 = 371.25 MHz, VCO 7
 
 | Step | On the screen | Proves | Karn |
 |---|---|---|---|
-| **H1** | Colour test pattern | clocks, TMDS, serializers, pins, monitor accepts 720p | HDMI cable, report what's on screen |
+| **H1** ✅ | Colour test pattern | clocks, TMDS, serializers, pins, monitor accepts 720p | HDMI cable, report what's on screen |
 | H2 | One sharp bar from a test tone generated inside the FPGA | buffer → window → FFT → dB → bars | look |
 | H3 | Live spectrum from the microphone | the full demo | wire the mic (5 wires) |
 | H4 | Gridlines, kHz/dB labels, peak readout | presentable | — |
