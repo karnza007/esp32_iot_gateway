@@ -3,6 +3,7 @@
 // Clock-independent: the top file picks the clock and passes CLK_MHZ.
 //   top.v     27 MHz, straight from the crystal
 //   top_54.v  54 MHz, from the PLL (27 MHz x 2)
+//   top_81.v  81 MHz, from the PLL (27 MHz x 3)
 // The UART stays at 1 Mbaud either way (CLK_MHZ clocks per bit).
 //
 // A frame engine that receives one 1024-point signal from the ESP32 into block RAM,
@@ -275,7 +276,7 @@ module fft_link #(
     end
 
     // ---- LEDs (the 20K's LEDs light when the pin is low) ----
-    reg [25:0] beat = 26'd0;                      // ~1.2 s per blink at 27 or 54 MHz
+    reg [25:0] beat = 26'd0;                      // ~0.8-1.2 s per blink at 27-81 MHz
     always @(posedge clk) beat <= beat + 1'b1;
     wire blink = (CLK_MHZ > 40) ? beat[25] : beat[24];
     wire receiving = in_frame;

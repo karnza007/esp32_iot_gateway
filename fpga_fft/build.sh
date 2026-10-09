@@ -3,6 +3,7 @@
 #   ./build.sh            synthesise + place & route  -> impl/pnr/fpga_fft.fs
 #   ./build.sh program    ...then load it into the FPGA (SRAM: fast, lost at power-off)
 #   MHZ=54 ./build.sh ... the 54 MHz build (src/top_54.v: PLL doubles the crystal)
+#   MHZ=81 ./build.sh ... the 81 MHz build (src/top_81.v: PLL triples it)
 # Same result as Synthesize + Place & Route in the IDE; reports land in impl/.
 set -e
 # PR1014 is filtered: the 20K's crystal lands on pin 4, a PLL input rather than a
@@ -13,7 +14,8 @@ cd "$(dirname "$0")"
 case "${MHZ:-27}" in
   27) TOP=top ;;
   54) TOP=top_54 ;;
-  *)  echo "MHZ must be 27 or 54"; exit 1 ;;
+  81) TOP=top_81 ;;
+  *)  echo "MHZ must be 27, 54 or 81"; exit 1 ;;
 esac
 echo "building $TOP (${MHZ:-27} MHz)"
 # gw_sh takes no arguments, so the choice is passed through a two-line wrapper script
