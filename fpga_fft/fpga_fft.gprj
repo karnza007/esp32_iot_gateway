@@ -8,6 +8,12 @@
         <File path="src/top.v" type="file.verilog" enable="1"/>
         <File path="src/top_54.v" type="file.verilog" enable="1"/>
         <File path="src/top_81.v" type="file.verilog" enable="1"/>
+        <File path="src/top_hdmi.v" type="file.verilog" enable="1"/>
+        <File path="src/hdmi/video_timing.v" type="file.verilog" enable="1"/>
+        <File path="src/hdmi/test_pattern.v" type="file.verilog" enable="1"/>
+        <File path="src/hdmi/tmds_encoder.v" type="file.verilog" enable="1"/>
+        <File path="src/hdmi/hdmi_out.v" type="file.verilog" enable="1"/>
+        <File path="src/hdmi/video_h1.v" type="file.verilog" enable="1"/>
         <File path="src/pll_clk.v" type="file.verilog" enable="1"/>
         <File path="src/fft_link.v" type="file.verilog" enable="1"/>
         <File path="src/uart_rx.v" type="file.verilog" enable="1"/>
