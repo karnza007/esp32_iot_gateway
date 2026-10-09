@@ -15,7 +15,8 @@
 // monitor shows the picture.
 module top_hdmi #(
     parameter integer   CLAMP      = 32700, // input limit before the FFT (see spectrum.v)
-    parameter [2:0]     GAIN_START = 3'd4   // microphone gain at power-up: 4 steps = +24 dB
+    parameter [2:0]     GAIN_START = 3'd4,  // microphone gain at power-up: 4 steps = +24 dB
+    parameter           LED_DIAG   = 1'b1   // 1: LEDs 0-2 show the microphone wire (see below)
 )(
     input  wire       clk,         // 27 MHz crystal, pin 4
     input  wire       uart_rx,     // ESP32 benchmark, unchanged
@@ -63,6 +64,30 @@ module top_hdmi #(
     fft_link #(.CLK_MHZ(27)) u_link (
         .clk(clk), .clk_ok(1'b1), .uart_rx(uart_rx), .uart_tx(uart_tx), .led(led_link));
 
+    // ---- microphone diagnostics (LED_DIAG = 1) ----
+    // Over each 56 ms window (2^22 clocks): has SD been seen high? low? has a non-zero
+    // left-channel sample arrived? The result of the last window is shown on LEDs 0-2.
+    //   0 and 1 lit, 2 lit  : the mic is talking in our (left) slot      -> working
+    //   0 and 1 lit, 2 off  : SD toggles, but only outside the left slot -> L/R not at GND
+    //   only 1 lit          : SD stuck low  -> mic not powered / not clocked / SD not connected
+    //   only 0 lit          : SD stuck high
+    reg sd_m = 0, sd_s = 0;
+    always @(posedge pclk) begin sd_m <= i2s_sd; sd_s <= sd_m; end
+    reg [21:0] win = 0;
+    reg seen_hi = 0, seen_lo = 0, seen_nz = 0, show_hi = 0, show_lo = 0, show_nz = 0;
+    always @(posedge pclk) begin
+        win <= win + 1'b1;
+        if (win == 0) begin
+            {show_hi, show_lo, show_nz} <= {seen_hi, seen_lo, seen_nz};
+            {seen_hi, seen_lo, seen_nz} <= 3'b000;
+        end else begin
+            if (sd_s)  seen_hi <= 1'b1;
+            if (!sd_s) seen_lo <= 1'b1;
+            if (u_video.u_mic.valid && u_video.u_mic.sample != 0) seen_nz <= 1'b1;
+        end
+    end
+
     // LEDs (lit when low): see the header. The benchmark still runs; its LEDs are not shown.
-    assign led = {~locked, ~overrun, ~use_mic, ~gain};
+    assign led = LED_DIAG ? {~locked, ~overrun, ~use_mic, ~show_nz, ~show_lo, ~show_hi}
+                          : {~locked, ~overrun, ~use_mic, ~gain};
 endmodule

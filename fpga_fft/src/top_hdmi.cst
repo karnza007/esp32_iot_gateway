@@ -32,9 +32,9 @@ IO_PORT "tmds_d_p[2]" IO_TYPE=LVDS25 PULL_MODE=NONE DRIVE=3.5 BANK_VCCIO=3.3;
 
 // INMP441 microphone (H3) — header pins next to the ESP32 UART (27/28)
 IO_LOC "i2s_sck" 25;
-IO_PORT "i2s_sck" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_PORT "i2s_sck" IO_TYPE=LVCMOS33 DRIVE=4;   // weakest drive: softer edges on jumper wires
 IO_LOC "i2s_ws" 26;
-IO_PORT "i2s_ws" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_PORT "i2s_ws" IO_TYPE=LVCMOS33 DRIVE=4;
 IO_LOC "i2s_sd" 29;
 IO_PORT "i2s_sd" IO_TYPE=LVCMOS33 PULL_MODE=DOWN;   // the mic lets SD float in the right-channel half
 
