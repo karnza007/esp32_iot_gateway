@@ -34,7 +34,7 @@ module top_module #(
     // cannot: one INMP441 makes 95 kB/s against a 200 kB/s link. Everything
     // downstream is unchanged. GEN_DIV must be a multiple of 64 so the rate can be
     // reported through the existing BCLK_DIV field as GEN_DIV/64.
-    parameter integer GEN_MODE    = 1,
+    parameter integer GEN_MODE    = 0,
     parameter integer GEN_DIV     = 320  // synthetic rate
 )(
     input  wire clk,         // 27 MHz crystal (pin 45)
@@ -80,7 +80,7 @@ module top_module #(
     wire        mic_valid;
     i2s_master_rx #(
         .BCLK_DIV  (BCLK_DIV),
-        .CAP_START (2)
+        .CAP_START (1)
     ) u_i2s (
         .clk(clk24), .rst_n(rst_n),
         .i2s_sck(i2s_sck), .i2s_ws(i2s_ws), .i2s_sd(i2s_sd),

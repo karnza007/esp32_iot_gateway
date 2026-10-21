@@ -7,7 +7,7 @@ microphone → Tang Nano 20K → Gowin FFT → spectrum on a monitor over the bo
 |---|---|---|
 | **H1** | Colour test pattern at 1280×720, 60 Hz | ✅ 2026-10-09 |
 | **H2** | Spectrum of a test tone generated inside the FPGA | ✅ 2026-10-09 |
-| H3 | Live spectrum from the INMP441 microphone | ⏳ built + simulated; mic connection unstable |
+| **H3** | Live spectrum from the INMP441 microphone | ✅ 2026-10-21 (direct mic, pins 25/26/29) |
 | H4 | Gridlines, kHz/dB labels, peak readout | — |
 
 ---
@@ -216,38 +216,78 @@ generated), and a testbench that stopped before the FFT's mirror half was out.
 
 ---
 
-## 5. H3: the live microphone (in progress)
+## 5. H3: the live microphone ✅
 
-### 5.1 Two ways in, both selectable with button S1
+### 5.1 Three sources, selectable with button S1
 
 | Source | Path | Modules |
 |---|---|---|
-| ESP32 relay (default) | INMP441 → ESP32 I2S → UART 2.97 Mbaud (GPIO17 → pin 27) → FPGA | `firmware/mic_relay`, `relay_rx.v` |
+| **Direct (default)** | INMP441 → FPGA pins 25 (SCK), 26 (WS), 29 (SD) | `mic_source.v` + `fpga/src/i2s_master_rx.v` (24-bit output) |
+| ESP32 relay | INMP441 → ESP32 I2S → UART 2.97 Mbaud (GPIO17 → pin 27) → FPGA | `firmware/mic_relay`, `relay_rx.v` |
 | Test tone | as in H2 | `tone_gen.v` |
-| Direct | INMP441 → FPGA pins 25 (SCK), 26 (WS), 29 (SD) | `mic_source.v` + `fpga/src/i2s_master_rx.v` (new 24-bit output) |
 
-Both microphone paths use `gain24.v`: the 16-bit sample is a window of the 24-bit word, moved
-down 0…7 bits (+0…+42 dB, button S2, start +24 dB), saturated, then clamped to ±32,700.
+S1 steps direct → relay → tone → direct. Both microphone paths use `gain24.v`: the 16-bit
+sample is a window of the 24-bit word, moved down 0…7 bits (+0…+42 dB, button S2, **start
+0 dB** = the top 16 bits), saturated, then clamped to ±32,700.
 Relay packet: `B5 6A | seq | 32 × 24-bit (LE) | sum16` = 101 bytes, 1,500 /s, 51 % of the link;
 a packet with a wrong sum is dropped, one that stalls 1 ms is abandoned.
+
+**Direct-mic clocks (final):** bit clock 74.25 MHz ÷ 77 = **964.3 kHz**, 64 bit clocks per
+sample → **15,067 samples/s**. The 512 bars then span 0–7.5 kHz, 14.7 Hz per bar (2 px):
+220 Hz is bar 15 (x ≈ 158), 440 Hz bar 30 (x ≈ 188), 1 kHz bar 68 (x ≈ 264). The test tone
+keeps its own 48.3 kHz rate, so on that source the screen spans 0–24 kHz. SCK/WS drive 8 mA.
 
 ### 5.2 Verified in simulation
 
 | Test | Result |
 |---|---|
-| `tb_h3_mic`: the audio project's INMP441 model, 8 gain copies | bit-exact incl. saturation; SCK exactly 24 clocks (3.09 MHz), a sample every 1,536 clocks |
+| `tb_h3_mic`: INMP441 model timed like the real chip, 8 gain copies | bit-exact incl. saturation; SCK exactly 77 clocks (964 kHz), a sample every 4,928 clocks |
 | `tb_h3_relay`: packets at the ESP32's real baud (2,969,838) | 192 / 192 samples bit-exact; corrupted packet dropped; half packet abandoned |
 | `fpga/sim/run_sims.sh` (audio project, shared `i2s_master_rx`) | all pass |
 
-### 5.3 On the hardware: the microphone connection is unstable
+### 5.3 How the hardware got there (2026-10-09 → 10-21)
 
-| Observation | Meaning |
+The first build ran the mic at 3.09 MHz on pins 25/26/29 and saw nothing (SD never high);
+the mic connection was unstable even on the ESP32. To debug without the HDMI chain in the
+way, a separate **mic check** build was made (`fpga_fft/src/top_mic_uart.v`, `DESIGN=mic`):
+mic → 20K → UART → ESP32 bridge → `host/inmp441_viewer.py`, on the 27 MHz crystal with no PLL,
+with a built-in 1 kHz test tone (S1) to prove the link on its own and a raw-bits mode (S2)
+that sends every SD bit (read by `host/sd_raw.py`).
+
+| Setup | Result |
 |---|---|
-| Direct path: SD never high (diagnostic LEDs) | the mic never started |
-| ESP32 `mic_test`: data alternates between clean audio, silence and scrambled words | the mic keeps restarting: its clock or power keeps dropping for moments |
-| After re-seating the wires: clean 220 Hz / 1 kHz in `inmp441_viewer.py` | the mic itself works |
-| Later, same firmware: scrambled again (correlation +0.4) | the contact loosened again |
+| Mic check, test tone | 1 kHz exact, 0 frames lost: the link works |
+| Mic on the **ESP32**, scope probe on SCK | scrambled. Probing SD or WS alone was fine; **probing SCK broke it** |
+| Mic on the ESP32, no probe (3.07 MHz) | clean: correlation 0.99, 220 Hz shown |
+| 20K pins 73/74/75, then SCK 76; 643 kHz; 4 / 8 mA; 2.25 MHz | scrambled or shifted words (values −64, −128, 32767; correlation ≈ 0.06) |
+| Two receiver fixes (§5.4) | correct in simulation, no visible change on the board |
+| Raw bits | SD active in both halves of the frame, no fixed start bit |
+| **Tang Nano 4K** (pins 39/40/41, 964 kHz, same receiver) | clean: 220 / 440 Hz; quiet-room correlation 0.77 |
+| **20K pins 25/26/29, 964 kHz** (27 MHz ÷ 28), 8 mA | clean: quiet-room correlation 0.954, values −54…47; 220 / 440 Hz confirmed |
+| **H3 on the monitor**, same pins and clock | ✅ works |
 
-Changes made for margin: FPGA SCK/WS drive 4 mA (weakest), ESP32 SCK/WS weakest drive, SD
-pull-down on both (INMP441 datasheet). **Next:** solder the module's header pins, use short
-wires, or try another module; then test both paths on the monitor.
+The 4K result cleared both the microphone and the shared receiver logic. On the 20K two things
+changed together in the run that worked (pins and bit clock), so which one mattered is not
+known; the demo keeps both.
+
+### 5.4 Two receiver timing fixes (`fpga/src/i2s_master_rx.v`)
+
+Neither was the cause of the scrambled data, but both are real faults and are kept:
+
+1. **SCK and WS now come straight from flip-flops.** They used to be decoded from the divider
+   counter with logic. When a counter changes several bits at once, the logic output can
+   briefly flick to a wrong value (a *glitch*) before it settles. The mic would count a
+   glitch on SCK as an extra clock edge.
+2. **WS now changes when SCK falls, not when it rises.** The INMP441 reads WS on the rising
+   SCK edge. Changing WS on that same edge is a race: the mic may read the old or the new
+   value, so its frame can start one bit early or late. On the falling edge WS is steady
+   long before the mic reads it. The capture start moved with it (`CAP_START` 2 → 1), and
+   the simulation mic models now read WS on the rising edge and change SD on the falling
+   edge, like the real chip.
+
+### 5.5 Lessons
+
+- **Don't probe SCK while testing.** A scope probe is a capacitor and a long wire; on a fast
+  clock edge that can create extra edges at the mic.
+- **Isolate with a known-good reference.** Swapping in the 4K (the same mic, the same receiver
+  logic, a different board) answered in one run what a week of changes on the 20K could not.

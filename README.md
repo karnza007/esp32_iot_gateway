@@ -98,7 +98,8 @@ fpga/          Gowin EDA project (i2s_capture.gprj) and Verilog sources
   build.tcl    command-line synthesis + place & route (gw_sh)
 firmware/      Arduino sketches for the ESP32-S3 gateway
   reference/   earlier experiments kept for comparison
-host/          inmp441_viewer.py — live viewer and link analyser
+fpga_fft/      Tang Nano 20K: FFT benchmark, HDMI demo (DESIGN=hdmi), mic check (DESIGN=mic); build.sh
+host/          inmp441_viewer.py — live viewer and link analyser; sd_raw.py — raw SD bits (mic check)
 docs/          glossary, requirements, architecture, protocol, results, plans, diary
 data/          measurement runs (CSV) — gitignored
 tools/         summarize_run.py, probe_port.py, read_diag.py, sweep*.sh, split_runs.py

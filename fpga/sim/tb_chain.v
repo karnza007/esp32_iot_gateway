@@ -9,10 +9,12 @@
 //            fpga/src/i2s_master_rx.v fpga/src/framer.v fpga/src/uart_tx.v
 //   vvp /tmp/tb_chain
 //
-// The microphone model is a standard Philips I2S transmitter: it changes SD on
-// the FALLING edge of SCK and delays the MSB by one bit clock after the WS edge.
-// That one-clock delay is exactly what makes CAP_START = 2 the right capture
-// phase, so this test also pins down that constant.
+// The microphone model is a standard Philips I2S transmitter, timed like the real
+// INMP441: it reads WS on the RISING edge of SCK and changes SD on the FALLING edge;
+// the MSB goes out on the first falling edge after it has seen WS change. With WS
+// changing on a falling edge (i2s_master_rx.v), the MSB lands at bit 1: CAP_START = 1.
+// (An earlier model read WS on the falling edge, which hid a WS-timing race that only
+// the real microphone exposed.)
 
 `timescale 1ns/1ps
 module tb_chain #(
@@ -41,7 +43,7 @@ module tb_chain #(
     wire        tx_valid, tx_ready;
     wire        uart_line;
 
-    i2s_master_rx #(.BCLK_DIV(BCLK_DIV), .CAP_START(2)) u_i2s (
+    i2s_master_rx #(.BCLK_DIV(BCLK_DIV), .CAP_START(1)) u_i2s (
         .clk(clk), .rst_n(rst_n),
         .i2s_sck(i2s_sck), .i2s_ws(i2s_ws), .i2s_sd(i2s_sd),
         .sample(sample), .sample_valid(sample_valid)
@@ -73,22 +75,26 @@ module tb_chain #(
         endcase
     endfunction
 
-    reg [31:0] shifter = 32'd0;
+    reg [31:0] shifter = 32'd0, w32;
+    reg        ws_s    = 1'b1;                     // WS as read on the rising edge
     reg        ws_d    = 1'b1;
     reg        sd_r    = 1'b0;
     integer    widx    = 0;
     assign i2s_sd = sd_r;
 
+    always @(posedge i2s_sck) ws_s <= i2s_ws;
     always @(negedge i2s_sck) begin
-        if (i2s_ws !== ws_d) begin
-            ws_d <= i2s_ws;
-            if (i2s_ws == 1'b0) begin              // left slot begins
-                shifter <= {mic_pattern(widx), 8'h00};
+        if (ws_s !== ws_d) begin
+            ws_d <= ws_s;
+            if (ws_s == 1'b0) begin                // left slot begins: MSB out now
+                w32      = {mic_pattern(widx), 8'h00};
+                sd_r    <= w32[31];
+                shifter <= {w32[30:0], 1'b0};
                 widx     = widx + 1;
             end else begin
-                shifter <= 32'd0;                  // right channel: silence
+                sd_r    <= 1'b0;                   // right channel: silence
+                shifter <= 32'd0;
             end
-            sd_r <= 1'b0;                          // the one-BCLK I2S delay
         end else begin
             sd_r    <= shifter[31];
             shifter <= {shifter[30:0], 1'b0};
@@ -172,7 +178,10 @@ module tb_chain #(
                     rx[base+4]+rx[base+5]+rx[base+6]+rx[base+7]+rx[base+8]+rx[base+9]);
 
             // payload must be the top 16 bits of the mic words for this frame
-            for (s = 0; s < FRAME_SAMPLES; s = s + 1) begin
+            // The very first sample after reset is skipped: SCK starts high after reset,
+            // so the model's first rising edge (where it reads WS) comes one bit late and
+            // only that word is shifted. A real INMP441 needs ~85 ms to start up anyway.
+            for (s = (fseq == 0) ? 1 : 0; s < FRAME_SAMPLES; s = s + 1) begin
                 gotw = {rx[base+12+2*s+1], rx[base+12+2*s]};
                 want = mic_pattern(fseq*FRAME_SAMPLES + s) >> 8;
                 if (gotw !== want) begin
@@ -181,7 +190,7 @@ module tb_chain #(
                 end
             end
             if (errors == 0)
-                $display("  payload matches the mic model exactly (CAP_START=2 confirmed)");
+                $display("  payload matches the mic model exactly (CAP_START=1 confirmed)");
         end
 
         $display("");

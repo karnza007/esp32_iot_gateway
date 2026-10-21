@@ -27,7 +27,7 @@
 
 module i2s_master_rx #(
     parameter integer BCLK_DIV  = 25, // 24 MHz / BCLK_DIV = bit clock (>= 8)
-    parameter integer CAP_START = 2   // bit_cnt at which the MSB lands (I2S phase)
+    parameter integer CAP_START = 1   // bit_cnt at which the MSB lands (I2S phase)
 )(
     input  wire        clk,           // 24 MHz
     input  wire        rst_n,         // active-low reset
@@ -58,7 +58,23 @@ module i2s_master_rx #(
         else        div_cnt <= period_end ? 0 : (div_cnt + 1'b1);
     end
 
-    assign i2s_sck = (div_cnt < SCK_HIGH);
+    // SCK and WS leave the chip from FLIP-FLOPS, never straight from a comparison.
+    // `div_cnt < SCK_HIGH` is a small logic circuit whose inputs (the counter bits) arrive
+    // a little apart; while they settle, its output can flick to the wrong value for a
+    // nanosecond or two. Inside the FPGA nobody looks at that moment, but on a pin the
+    // microphone sees it as an extra SCK edge, counts one bit too many, and its words
+    // arrive shifted. Measured on the Tang Nano 20K, 2026-10-14: words like -64 and -128
+    // instead of +-1 in a quiet room; worse at BCLK_DIV 12 than 42; changed with the pin.
+    // A flip-flop changes once per clock, cleanly. Each one is loaded with the value the
+    // comparison WILL have after this clock edge (from div_next / bit_next), so the pins
+    // switch at exactly the same clock edges as before -- only without glitches.
+    wire [DW-1:0] div_next = period_end ? {DW{1'b0}} : (div_cnt + 1'b1);
+    reg           sck_q    = 1'b1;           // div_cnt = 0 after reset -> SCK high
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) sck_q <= 1'b1;
+        else        sck_q <= (div_next < SCK_HIGH);
+    end
+    assign i2s_sck = sck_q;
 
     // ------------------------------------------------------------------
     // bit counter — 64 BCLK per WS frame, WS low for the first 32 = left
@@ -68,7 +84,20 @@ module i2s_master_rx #(
         if (!rst_n)          bit_cnt <= 6'd0;
         else if (period_end) bit_cnt <= bit_cnt + 1'b1;   // 6 bits: wraps 63 -> 0
     end
-    assign i2s_ws = (bit_cnt >= 6'd32);
+    // WS changes on the FALLING edge of SCK, half a bit before the bit boundary, as the I2S
+    // standard requires: the microphone reads WS on the RISING edge, so WS must already be
+    // steady there. It used to change at the bit boundary, i.e. exactly AT a rising edge;
+    // whether the mic then saw the old or the new WS came down to nanoseconds of wiring, so
+    // its words started a bit early or late (Tang Nano 20K, 2026-10-14). The ESP32's I2S
+    // hardware does it the standard way, which is why the same mic was clean there.
+    // At the falling edge during bit k, WS takes the value for bit k+1: high for 32..63.
+    wire [5:0] bit_after = bit_cnt + 1'b1;   // wraps 63 -> 0
+    reg        ws_q      = 1'b0;             // a flip-flop, for the same reason as SCK
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)                      ws_q <= 1'b0;
+        else if (div_next == SCK_HIGH)   ws_q <= bit_after[5];   // SCK falls after this edge
+    end
+    assign i2s_ws = ws_q;
 
     // ------------------------------------------------------------------
     // 2-flip-flop synchroniser on SD — the only asynchronous input in the
@@ -84,14 +113,12 @@ module i2s_master_rx #(
     // Capture 24 bits MSB-first, then truncate to 16.
     //
     // SD is sampled at SAMPLE_PT — the middle of the SCK high phase, well after
-    // the microphone's output has settled. I2S nominally puts the MSB one BCLK
-    // after the WS edge, but the effective alignment also depends on where in
-    // the period we sample; a simulation sweep against known patterns (A5A5,
-    // 8000, 7FFF, 1234) showed CAP_START = 2 reproduces full scale exactly.
-    //
-    // If a known tone ever reads at half amplitude on hardware, nudge CAP_START
-    // by +/-1 — that is the usual off-by-one I2S alignment tweak, and it is
-    // independent of BCLK_DIV.
+    // the microphone's output has settled. Standard I2S timing: WS changes on the
+    // falling edge in the last bit of a slot, the mic sees it at the next rising edge
+    // (start of bit 0), drives the MSB from the falling edge in bit 0, and the MSB is
+    // read during bit 1 -> CAP_START = 1. (It was 2 while WS changed at the rising
+    // edge; the simulations' mic model now reads WS on the rising edge like the real
+    // one, so they check this.)
     // ------------------------------------------------------------------
     wire       sample_pt = (div_cnt == SAMPLE_PT);
     reg [23:0] word24    = 24'd0;

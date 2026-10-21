@@ -65,6 +65,9 @@ BODY_BYTES = FRAME_BYTES - len(SYNC)                         # read after sync
 LINK1_BPS = 200_000            # FPGA -> ESP32 @ 2 Mbaud
 LINK2_BPS = BAUD // 10         # ESP32 -> host, 8N1 = 10 bits per byte
 FPGA_CLK_HZ = 24_000_000
+CLK_CODE_27 = 63               # cfg[15:10] = 63 means 27 MHz: the Tang Nano 20K's crystal,
+                               # used without a PLL (fpga_fft/src/top_mic_uart.v). 27 is not
+                               # a multiple of 6, so it gets this reserved code.
 BCLK_PER_FRAME = 64
 FFT_YMAX_DEFAULT = 5000        # fixed magnitude axis; no auto-scaling
 
@@ -115,6 +118,8 @@ def clock_from_cfg(cfg: int) -> int:
     from a value written in one place and assumed in another.
     """
     code = (cfg >> 10) & 0x3F
+    if code == CLK_CODE_27:
+        return 27_000_000
     return FPGA_CLK_HZ if code == 0 else code * 6_000_000
 
 
@@ -175,8 +180,8 @@ def plausible_cfg(cfg: int) -> bool:
     bclk_div = cfg & 0xFF
     nch = (cfg >> 8) & 0x3
     reserved = cfg >> 10
-    # reserved is now the clock code: 0 (legacy 24 MHz), else 6 MHz units
-    return 1 <= bclk_div <= 255 and 1 <= nch <= 3 and reserved in (0, 4, 8, 9, 16, 20)
+    # reserved is now the clock code: 0 (legacy 24 MHz), else 6 MHz units, 63 = 27 MHz
+    return 1 <= bclk_div <= 255 and 1 <= nch <= 3 and reserved in (0, 4, 8, 9, 16, 20, CLK_CODE_27)
 
 
 # ---------------------------------------------------------------- statistics

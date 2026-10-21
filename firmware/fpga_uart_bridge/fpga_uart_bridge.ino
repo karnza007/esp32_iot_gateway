@@ -1,6 +1,6 @@
 // fpga_uart_bridge.ino — ESP32-S3 gateway between the FPGA and the host.
 //
-//   FPGA (Tang Nano 4K) pin 42 ──link 1──▶ ESP32-S3 GPIO18 (RX)
+//   FPGA pin ──link 1──▶ ESP32-S3 GPIO18 (RX)   Tang Nano 4K: pin 42.  Tang Nano 20K: pin 28
 //   ESP32-S3 ──link 2──▶ host   (native USB by default; CH9102 still selectable)
 //
 // TWO LINKS, TWO BAUD RATES, EACH SET IN TWO PLACES:
@@ -11,13 +11,18 @@
 // `arduino-cli upload` alone re-flashes a cached binary — use `compile --upload`.
 //
 // Arduino IDE: ESP32S3 Dev Module, USB CDC On Boot: Disabled (Serial = UART0).
+// Flash: arduino-cli compile --upload -b esp32:esp32:esp32s3:CDCOnBoot=cdc \
+//            -p /dev/cu.wchusbserial* firmware/fpga_uart_bridge
 
 #include <Arduino.h>
 
 // ---------------------------------------------------------------- configuration
 constexpr int      FPGA_RX_PIN = 18;        // ESP32-S3 GPIO <- FPGA UART TX (pin 42)
 constexpr int      FPGA_TX_PIN = 17;        // unused (no data back to the FPGA)
-constexpr uint32_t FPGA_BAUD   = 2000000;
+// 1 Mbaud for the Tang Nano 20K microphone check (fpga_fft/src/top_mic_uart.v: 27 MHz / 27 clocks
+// per bit; 2 Mbaud is not a whole number of 27 MHz clocks). The Tang Nano 4K (fpga/src/top.v:
+// 54 MHz / 27) needs 2000000.
+constexpr uint32_t FPGA_BAUD   = 1000000;
 constexpr uint32_t HOST_BAUD   = 2000000;   // link 2, CH9102 path only; USB has no baud
 
 // Link 2 transport. Measured 2026-09-03 (docs/10-link2-transports.md):
@@ -37,7 +42,9 @@ constexpr uint32_t HOST_BAUD   = 2000000;   // link 2, CH9102 path only; USB has
 // at the others.
 #define LINK2_UART0 0        // CH9102 bridge  -> /dev/cu.wchusbserial*
 #define LINK2_USB   1        // native USB     -> /dev/cu.usbmodem*
-constexpr int LINK2 = LINK2_USB;
+// The 20K microphone check uses the CH9102 port (/dev/cu.wchusbserial*): 20 kB/s of audio is
+// far below its limit, and it is the port this setup has plugged in.
+constexpr int LINK2 = LINK2_UART0;
 
 // 0 = pump (normal operation), 1 = diagnostic.
 //

@@ -1,9 +1,10 @@
 // top_hdmi.v — HDMI demo build (docs/plans/hdmi-demo.md). Step H3: live microphone spectrum.
 //
 // CONTROLS (the board's two buttons)
-//   pin 88 button (S1): source  ESP32-relayed mic -> test tone -> direct mic -> ...
-//                       (starts on the ESP32-relayed mic)
-//   pin 87 button (S2): gain +6 dB, 0 -> +42 dB, then back to 0     (starts at +24 dB)
+//   pin 88 button (S1): source  direct mic -> ESP32-relayed mic -> test tone -> ...
+//                       (starts on the direct mic, pins 25/26/29)
+//   pin 87 button (S2): gain +6 dB, 0 -> +42 dB, then back to 0     (starts at 0 dB: the top
+//                       16 of the mic's 24 bits)
 // LEDs (lit when low), with LED_DIAG = 1:
 //   0, 1 = source: 0 off 1 off = test tone, 0 on = direct mic, 1 on = ESP32 relay
 //   2 = direct mic: SD wire active (seen high and low in the last 56 ms)
@@ -20,7 +21,7 @@
 // monitor shows the picture.
 module top_hdmi #(
     parameter integer   CLAMP      = 32700, // input limit before the FFT (see spectrum.v)
-    parameter [2:0]     GAIN_START = 3'd4,  // microphone gain at power-up: 4 steps = +24 dB
+    parameter [2:0]     GAIN_START = 3'd0,  // microphone gain at power-up: 0 dB (top 16 bits)
     parameter           LED_DIAG   = 1'b1   // 1: LEDs show source + input health (header)
 )(
     input  wire       clk,         // 27 MHz crystal, pin 4
@@ -49,7 +50,7 @@ module top_hdmi #(
     // buttons -> source and gain
     wire [1:0] pressed;
     buttons u_btn (.clk(pclk), .btn(btn), .pressed(pressed));
-    reg [1:0] src     = 2'd2;                       // start on the ESP32 relay
+    reg [1:0] src     = 2'd1;                       // start on the direct mic
     reg [2:0] gain    = GAIN_START;
     always @(posedge pclk) begin
         if (pressed[0]) src <= (src == 2'd2) ? 2'd0 : src + 1'b1;   // 2 -> 0 -> 1 -> 2

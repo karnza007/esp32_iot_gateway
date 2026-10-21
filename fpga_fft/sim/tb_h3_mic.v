@@ -17,7 +17,7 @@ module tb_h3_mic;
     genvar g;
     generate
         for (g = 0; g < 8; g = g + 1) begin : m
-            mic_source #(.BCLK_DIV(24)) u (.clk(clk), .rst(rst), .i2s_sck(sck[g]), .i2s_ws(ws[g]),
+            mic_source #(.BCLK_DIV(77)) u (.clk(clk), .rst(rst), .i2s_sck(sck[g]), .i2s_ws(ws[g]),
                 .i2s_sd(sd), .gain(g[2:0]), .valid(valid[g]), .sample(smp[g]), .clipped());
         end
     endgenerate
@@ -31,14 +31,16 @@ module tb_h3_mic;
             9: word = 24'h400000;
         endcase
     endfunction
-    reg [31:0] shifter = 0;  reg ws_d = 1'b1;  reg sd_r = 1'b0;  integer widx = 0;
+    reg [31:0] shifter = 0, w32;  reg ws_s = 1'b1;  reg ws_d = 1'b1;  reg sd_r = 1'b0;  integer widx = 0;
     assign sd = sd_r;
+    // timed like the real INMP441: reads WS on the rising SCK edge, changes SD on the falling
+    // edge, MSB out on the first falling edge after it has seen WS change
+    always @(posedge sck[0]) ws_s <= ws[0];
     always @(negedge sck[0]) begin
-        if (ws[0] !== ws_d) begin
-            ws_d <= ws[0];
-            if (ws[0] == 1'b0) begin shifter <= {word(widx), 8'h00}; widx = widx + 1; end
-            else               shifter <= 32'd0;
-            sd_r <= 1'b0;
+        if (ws_s !== ws_d) begin
+            ws_d <= ws_s;
+            if (ws_s == 1'b0) begin w32 = {word(widx), 8'h00}; sd_r <= w32[31]; shifter <= {w32[30:0], 1'b0}; widx = widx + 1; end
+            else begin sd_r <= 1'b0; shifter <= 32'd0; end
         end else begin
             sd_r <= shifter[31];
             shifter <= {shifter[30:0], 1'b0};
@@ -49,12 +51,12 @@ module tb_h3_mic;
     integer f, nfr = 0, t_now = 0, t_last = -1, gap_bad = 0, sck_bad = 0, t_sck = -1, k;
     always @(posedge clk) t_now = t_now + 1;
     always @(posedge sck[0]) begin
-        if (nfr > 0 && t_now - t_sck != 24) sck_bad = sck_bad + 1;   // after start-up
+        if (nfr > 0 && t_now - t_sck != 77) sck_bad = sck_bad + 1;   // after start-up
         t_sck = t_now;
     end
     reg [8*256-1:0] fname;
     always @(posedge clk) if (valid[0]) begin
-        if (t_last >= 0 && t_now - t_last != 1536) gap_bad = gap_bad + 1;
+        if (t_last >= 0 && t_now - t_last != 64 * 77) gap_bad = gap_bad + 1;
         t_last = t_now;
         if (valid !== 8'hFF) begin $display("FAIL: copies out of step"); $finish; end
         // the word whose bits just finished: widx was advanced at the start of its slot
@@ -63,7 +65,7 @@ module tb_h3_mic;
         $fwrite(f, "\n");
         nfr = nfr + 1;
         if (nfr == 40) begin
-            $display("tb_h3_mic: %0d frames; SCK period errors %0d (want 24 clocks); sample gap errors %0d (want 1536)",
+            $display("tb_h3_mic: %0d frames; SCK period errors %0d (want 77 clocks); sample gap errors %0d (want 4928)",
                      nfr, sck_bad, gap_bad);
             $fclose(f);
             $finish;
