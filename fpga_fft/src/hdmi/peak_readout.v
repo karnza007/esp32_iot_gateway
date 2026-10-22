@@ -22,14 +22,11 @@ module peak_readout #(
     input  wire [8:0]  bar_addr,
     input  wire [9:0]  bar_h,
     input  wire        bar_done,           // pulse: the FFT's 512 heights are all written
-    input  wire [1:0]  src,                // 0 tone, 1 direct mic, 2 ESP32 relay
     input  wire [2:0]  gain,
     output reg  [76:0] dyn = {11{7'h20}}
 );
-    // K = fs x 64 for each source (fs / 1024 x 2^16). The test tone runs at the mic's rate.
-    localparam [23:0] K_MIC   = 74250000 / MIC_BCLK_DIV;       // fs = 74.25 MHz / (64 x div)
-    localparam [23:0] K_RELAY = 48000 * 64;                    // 3,072,000
-    wire [23:0] k = (src == 2'd2) ? K_RELAY : K_MIC;
+    // K = fs x 64 (fs / 1024 x 2^16). Both sources (mic and test tone) run at the mic's rate.
+    localparam [23:0] k = 74250000 / MIC_BCLK_DIV;             // fs = 74.25 MHz / (64 x div)
 
     // ---- 1. the tallest bar of each FFT; the latest one is shown every window ----
     reg [WIN_BITS-1:0] win = 0;

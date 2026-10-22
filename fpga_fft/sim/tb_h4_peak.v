@@ -33,7 +33,7 @@ module tb_h4_peak #(parameter integer SWEEP = 0);
     wire [76:0] dyn;
     peak_readout #(.MIC_BCLK_DIV(26), .WIN_BITS(16)) u_peak (
         .clk(clk), .rst(rst), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
-        .bar_done(bar_done), .src(2'd0), .gain(3'd0), .dyn(dyn));
+        .bar_done(bar_done), .gain(3'd0), .dyn(dyn));
 
     function [8*5-1:0] hz_text(input dummy);
         integer i;

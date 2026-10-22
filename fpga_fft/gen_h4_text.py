@@ -9,8 +9,8 @@ THE TEXT GRID. The 1280x720 picture is 80 x 45 cells of 16x16 px. Each cell show
 character: a 5x7 glyph (this file's own font) drawn at 2x inside an 8x8 cell. rom_text holds a
 10-bit word per cell:  [9:8] colour  [7] 1 = "live character k" (k = [3:0], set by
 peak_readout.v)  [6:0] ASCII code.
-Rows 1 (title + source) and 42 (kHz axis) change with the source, so three versions of each
-are stored below the visible picture: row 1 is read from row 45 + src, row 42 from 48 + src.
+Rows 1 (title + source) and 42 (kHz axis) change with the source, so one version per source
+is stored below the visible picture: row 1 is read from row 45 + src, row 42 from 48 + src.
 """
 import os
 import re
@@ -23,11 +23,10 @@ PCLK = 74.25e6
 
 src_v = open(os.path.join(HDMI, "video_h3.v")).read()
 MIC_DIV = int(re.search(r"parameter integer MIC_BCLK_DIV\s*=\s*(\d+)", src_v).group(1))
-# src values, as in video_h3.v: 0 test tone, 1 direct mic, 2 ESP32 relay
+# src values, as in video_h3.v: 0 test tone, 1 direct mic (the ESP32 relay, src 2, was removed)
 SOURCES = [
     ("TEST TONE", PCLK / (64 * MIC_DIV)),       # tone_gen: run at the mic's rate (video_h3.v)
     ("MIC DIRECT", PCLK / (64 * MIC_DIV)),      # mic_source: 64 bit clocks per sample
-    ("MIC VIA ESP32", 48000.0),                 # firmware/mic_relay: I2S at 48 kHz
 ]
 COLS, ROWS, VAR_TITLE, VAR_AXIS = 80, 45, 45, 48
 WHITE, GREY, YELLOW, CYAN = 0, 1, 2, 3

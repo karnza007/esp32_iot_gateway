@@ -3,16 +3,14 @@
 // frequency and its level), on top of the H3 bars.
 //   src 0: tone_gen (the H2 test tone)
 //   src 1: INMP441 wired to the FPGA, through mic_source
-//   src 2: INMP441 wired to the ESP32, relayed over UART (relay_rx)
-// Both microphone paths go through the same gain24 block, so gain behaves identically.
+// (H3 also had src 2, the INMP441 on the ESP32 relayed over UART by relay_rx.v. It was taken
+// out of the build on 2026-10-22: the direct mic works, so the relay is no longer needed.)
 module video_h3 #(
     parameter integer CLAMP        = 32700,
     parameter integer MIC_BCLK_DIV = 26      // mic bit clock = 74.25 MHz / this (see mic_source.v)
 )(
     input  wire       pclk, fclk, rst,
     input  wire [1:0] src,
-    input  wire       relay_in,       // UART from the ESP32 (pin 27, shared with the benchmark)
-    output wire       pkt_ok, pkt_bad,
     input  wire [2:0] gain,
     output wire       i2s_sck, i2s_ws,
     input  wire       i2s_sd,
@@ -30,17 +28,10 @@ module video_h3 #(
         .clk(pclk), .rst(rst), .valid(v_tone), .sample(s_tone));
     mic_source #(.BCLK_DIV(MIC_BCLK_DIV)) u_mic (.clk(pclk), .rst(rst), .i2s_sck(i2s_sck), .i2s_ws(i2s_ws), .i2s_sd(i2s_sd),
                        .gain(gain), .valid(v_mic), .sample(s_mic), .clipped(clip_mic));
-    assign clipped = (src == 2'd1) ? clip_mic : (src == 2'd2) ? clip_rel : 1'b0;
-    wire [23:0]        w_rel;
-    wire               v_rel24, v_rel, clip_rel;
-    wire signed [15:0] s_rel;
-    relay_rx u_relay (.clk(pclk), .rst(rst), .rx(relay_in), .valid(v_rel24), .word(w_rel),
-                      .pkt_ok(pkt_ok), .pkt_bad(pkt_bad));
-    gain24   u_relgain (.clk(pclk), .v_in(v_rel24), .w_in(w_rel), .gain(gain),
-                        .valid(v_rel), .sample(s_rel), .clipped(clip_rel));
+    assign clipped = (src == 2'd1) ? clip_mic : 1'b0;
 
-    wire signed [15:0] s       = (src == 2'd1) ? s_mic : (src == 2'd2) ? s_rel : s_tone;
-    wire               s_valid = (src == 2'd1) ? v_mic : (src == 2'd2) ? v_rel : v_tone;
+    wire signed [15:0] s       = (src == 2'd1) ? s_mic : s_tone;
+    wire               s_valid = (src == 2'd1) ? v_mic : v_tone;
 
     wire       bar_we, bar_done;
     wire [8:0] bar_addr;
@@ -61,7 +52,7 @@ module video_h3 #(
     wire [76:0] dyn;
     peak_readout #(.MIC_BCLK_DIV(MIC_BCLK_DIV)) u_peak (
         .clk(pclk), .rst(rst), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
-        .bar_done(bar_done), .src(src), .gain(gain), .dyn(dyn));
+        .bar_done(bar_done), .gain(gain), .dyn(dyn));
     wire [23:0] rgb;
     text_overlay u_text (.clk(pclk), .x(x), .y(y), .de(de), .src(src), .dyn(dyn),
                          .bar_rgb({br, bg, bb}), .rgb(rgb));

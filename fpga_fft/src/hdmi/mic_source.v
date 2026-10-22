@@ -11,7 +11,7 @@
 // The value actually used is set in video_h3.v (MIC_BCLK_DIV), which also feeds the peak
 // readout and gen_h4_text.py (kHz axis).
 //
-// GAIN: see gain24.v (shared with relay_rx.v, the ESP32 path).
+// GAIN: see gain24.v.
 module mic_source #(
     parameter integer BCLK_DIV = 26
 )(

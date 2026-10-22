@@ -26,7 +26,7 @@ module tb_h4_frame;
     wire [76:0] dyn;
     peak_readout #(.MIC_BCLK_DIV(26), .WIN_BITS(12)) u_peak (
         .clk(clk), .rst(rst), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
-        .bar_done(bar_done), .src(2'd1), .gain(3'd4), .dyn(dyn));
+        .bar_done(bar_done), .gain(3'd4), .dyn(dyn));
     wire [23:0] rgb;
     text_overlay u_text (.clk(clk), .x(x), .y(y), .de(de), .src(2'd1), .dyn(dyn),
                          .bar_rgb({br, bg, bb}), .rgb(rgb));

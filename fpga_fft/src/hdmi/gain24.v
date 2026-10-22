@@ -4,8 +4,8 @@
 //   gain 0: bits 23..8 (x1)    gain 4: bits 19..4 (x16, +24 dB)    gain 7: bits 16..1 (x128)
 // Picking lower bits uses the microphone's real fine detail rather than multiplying a coarse
 // 16-bit value. A sound too loud for 16 bits after the shift is saturated (held at the
-// limit); spectrum.v then clamps to +-CLAMP. Shared by mic_source (direct INMP441) and
-// relay_rx (INMP441 via the ESP32), so both behave identically.
+// limit); spectrum.v then clamps to +-CLAMP. Used by mic_source (direct INMP441); H3's
+// relay_rx (INMP441 via the ESP32) used it too.
 module gain24 (
     input  wire              clk,
     input  wire              v_in,

@@ -232,6 +232,12 @@ sample is a window of the 24-bit word, moved down 0…7 bits (+0…+42 dB, butto
 Relay packet: `B5 6A | seq | 32 × 24-bit (LE) | sum16` = 101 bytes, 1,500 /s, 51 % of the link;
 a packet with a wrong sum is dropped, one that stalls 1 ms is abandoned.
 
+> **2026-10-22: the ESP32 relay is out of the build.** The direct mic works, so S1 now
+> switches between just two sources: **direct mic ↔ test tone**. `relay_rx.v`,
+> `tb_h3_relay.v` and `firmware/mic_relay` stay in the repo as a record, but the HDMI build no
+> longer uses them. LEDs 1 and 3 (relay source, relay packets) are now unused, and LED 4 shows
+> only an FFT overrun.
+
 **Direct-mic clocks.** H3 first worked at 74.25 MHz ÷ 77 = 964.3 kHz bit clock (15,067
 samples/s, 2026-10-21), the rate proven by the mic check. The rate was then raised step by step,
 each step confirmed on the monitor:
@@ -313,10 +319,10 @@ peak at −23 dB: what `hdmi_out` receives, pixel for pixel. The same layout is 
 
 | Part | Where | Detail |
 |---|---|---|
-| Title, source, sample rate | top row | "LIVE FFT SPECTRUM - TANG NANO 20K + GOWIN FFT", "MIC DIRECT 44621 Hz" (changes with S1) |
+| Title, source, sample rate | top row | "LIVE FFT SPECTRUM - TANG NANO 20K + GOWIN FFT", "MIC DIRECT 44621 Hz" or "TEST TONE 44621 Hz" (S1) |
 | Gain | under it | "GAIN +24 dB", follows S2 at once |
 | dB labels | left, at the gridlines | 0 to −100 dB, every 20 dB |
-| kHz axis | bottom | a label and a dim tick line every 2 kHz, per source: mic and test tone span 0–22.3 kHz, ESP32 relay (48 kHz) 0–24 kHz |
+| kHz axis | bottom | a label and a dim tick line every 2 kHz; mic and test tone both span 0–22.3 kHz (the ESP32 relay, 0–24 kHz, was removed on 2026-10-22) |
 | Peak readout (yellow) | right | the loudest bin of the latest FFT, about 4 times a second: "1002 Hz", "-23 dB". Below −80 dB: "---" |
 
 ### 6.2 How text is drawn
@@ -326,7 +332,7 @@ character (`rom_text`), and the position inside the cell gives one pixel of that
 glyph (`rom_font`). Glyphs are 5×7 dots, drawn at 2× (each dot is 2×2 pixels), from a font
 written for this project, so there's no licence question. The few characters that change (the
 readout and the gain) are marked "live" in `rom_text` and taken from `peak_readout.v` instead.
-The title row and the kHz row differ per source: three versions of each are stored in rows
+The title row and the kHz row differ per source: one version per source is stored in rows
 below the visible picture, and the row number is swapped according to S1.
 
 `fpga_fft/gen_h4_text.py` writes `rom_font.v`, `rom_text.v` and `rom_ticks.v` from the font and
@@ -367,3 +373,9 @@ rate (now 22.2 kHz) in about 11 s.
 ### 6.5 Build
 
 22 % logic, 23 / 46 block RAMs, 9.5 / 24 DSP; timing met at 74.25 MHz (79.6 MHz achieved).
+
+Without the ESP32 relay (2026-10-22): 20 % logic, 20 / 46 block RAMs, 9.5 / 24 DSP; timing met
+at 74.25 MHz with **74.8 MHz achieved** (0.8 % spare). The slowest path is the text-ROM lookup
+(`rom_text`, built from logic, one clock). The design is smaller, so the drop comes from
+placement varying between builds, not from new logic. If a later change fails timing, the fix is
+to split that lookup over two clocks.
