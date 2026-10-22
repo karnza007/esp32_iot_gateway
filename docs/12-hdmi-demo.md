@@ -8,7 +8,7 @@ microphone → Tang Nano 20K → Gowin FFT → spectrum on a monitor over the bo
 | **H1** | Colour test pattern at 1280×720, 60 Hz | ✅ 2026-10-09 |
 | **H2** | Spectrum of a test tone generated inside the FPGA | ✅ 2026-10-09 |
 | **H3** | Live spectrum from the INMP441 microphone | ✅ 2026-10-21 (direct mic, pins 25/26/29) |
-| H4 | Gridlines, kHz/dB labels, peak readout | — |
+| **H4** | Gridlines, kHz/dB labels, peak readout | ✅ 2026-10-22 (mic at 44,621 Hz) |
 
 ---
 
@@ -232,16 +232,24 @@ sample is a window of the 24-bit word, moved down 0…7 bits (+0…+42 dB, butto
 Relay packet: `B5 6A | seq | 32 × 24-bit (LE) | sum16` = 101 bytes, 1,500 /s, 51 % of the link;
 a packet with a wrong sum is dropped, one that stalls 1 ms is abandoned.
 
-**Direct-mic clocks (final):** bit clock 74.25 MHz ÷ 77 = **964.3 kHz**, 64 bit clocks per
-sample → **15,067 samples/s**. The 512 bars then span 0–7.5 kHz, 14.7 Hz per bar (2 px):
-220 Hz is bar 15 (x ≈ 158), 440 Hz bar 30 (x ≈ 188), 1 kHz bar 68 (x ≈ 264). The test tone
-keeps its own 48.3 kHz rate, so on that source the screen spans 0–24 kHz. SCK/WS drive 8 mA.
+**Direct-mic clocks.** H3 first worked at 74.25 MHz ÷ 77 = 964.3 kHz bit clock (15,067
+samples/s, 2026-10-21), the rate proven by the mic check. The rate was then raised step by step,
+each step confirmed on the monitor:
+
+| `MIC_BCLK_DIV` (video_h3.v) | Bit clock | Sample rate | Screen span | Hz per bar | Seen clean |
+|---|---|---|---|---|---|
+| 77 | 964.3 kHz | 15,067 Hz | 0–7.5 kHz | 14.7 | 2026-10-21 |
+| 39 | 1.904 MHz | 29,748 Hz (≈ 2×) | 0–14.9 kHz | 29.0 | 2026-10-22 |
+| **26 (current)** | **2.856 MHz** | **44,621 Hz** (closest to 44.1 kHz; ÷27 gives 42,969) | 0–22.3 kHz | 43.6 | 2026-10-22 |
+
+Exactly 2× (÷38.5) or exactly 44.1 kHz would need a different clock. The test tone now runs at
+the same rate as the mic (§6). SCK/WS drive 8 mA.
 
 ### 5.2 Verified in simulation
 
 | Test | Result |
 |---|---|
-| `tb_h3_mic`: INMP441 model timed like the real chip, 8 gain copies | bit-exact incl. saturation; SCK exactly 77 clocks (964 kHz), a sample every 4,928 clocks |
+| `tb_h3_mic`: INMP441 model timed like the real chip, 8 gain copies | bit-exact incl. saturation; SCK exactly 26 clocks (2.856 MHz), a sample every 1,664 clocks (also run at 77 and 39) |
 | `tb_h3_relay`: packets at the ESP32's real baud (2,969,838) | 192 / 192 samples bit-exact; corrupted packet dropped; half packet abandoned |
 | `fpga/sim/run_sims.sh` (audio project, shared `i2s_master_rx`) | all pass |
 
@@ -291,3 +299,71 @@ Neither was the cause of the scrambled data, but both are real faults and are ke
   clock edge that can create extra edges at the mic.
 - **Isolate with a known-good reference.** Swapping in the 4K (the same mic, the same receiver
   logic, a different board) answered in one run what a week of changes on the 20K could not.
+
+---
+
+## 6. H4: labels and a peak readout ✅
+
+![H4 frame rendered in simulation](figures/h4_frame_sim.png)
+
+*One whole frame rendered by the simulation (`tb_h4_frame.v`) from a fake spectrum with a 1 kHz
+peak at −23 dB: what `hdmi_out` receives, pixel for pixel. The same layout is on the monitor.*
+
+### 6.1 What is on the screen
+
+| Part | Where | Detail |
+|---|---|---|
+| Title, source, sample rate | top row | "LIVE FFT SPECTRUM - TANG NANO 20K + GOWIN FFT", "MIC DIRECT 44621 Hz" (changes with S1) |
+| Gain | under it | "GAIN +24 dB", follows S2 at once |
+| dB labels | left, at the gridlines | 0 to −100 dB, every 20 dB |
+| kHz axis | bottom | a label and a dim tick line every 2 kHz, per source: mic and test tone span 0–22.3 kHz, ESP32 relay (48 kHz) 0–24 kHz |
+| Peak readout (yellow) | right | the loudest bin of the latest FFT, about 4 times a second: "1002 Hz", "-23 dB". Below −80 dB: "---" |
+
+### 6.2 How text is drawn
+
+The picture is a grid of **80 × 45 cells of 16×16 px**. For each pixel, the cell gives a
+character (`rom_text`), and the position inside the cell gives one pixel of that character's
+glyph (`rom_font`). Glyphs are 5×7 dots, drawn at 2× (each dot is 2×2 pixels), from a font
+written for this project, so there's no licence question. The few characters that change (the
+readout and the gain) are marked "live" in `rom_text` and taken from `peak_readout.v` instead.
+The title row and the kHz row differ per source: three versions of each are stored in rows
+below the visible picture, and the row number is swapped according to S1.
+
+`fpga_fft/gen_h4_text.py` writes `rom_font.v`, `rom_text.v` and `rom_ticks.v` from the font and
+the layout, and reads the mic rate from `video_h3.v` (`MIC_BCLK_DIV`), so the kHz axis always
+matches the clock. Re-run it after changing the rate.
+
+**Timing.** The colour of a pixel is ready 4 clocks after its x/y: text address, text ROM, font
+ROM, final colour (bars take 2 of those; sync signals are delayed by 4 to match). The first
+version looked up the text ROM in the same clock as computing its address and met 74.25 MHz by
+only 0.4 %; giving the address its own clock brought it to 79.6 MHz.
+
+### 6.3 The peak readout
+
+| Step | How |
+|---|---|
+| Find the peak | while the FFT writes its 512 heights, keep the tallest (bins 0–1 skipped: DC) |
+| Which FFT | every 0.23 s (2²⁴ clocks) show the peak of the **latest** FFT |
+| Frequency | Hz = bin × fs / 1024, as (bin × K + 2¹⁵) ≫ 16 with K = fs × 64; ±½ bin (±22 Hz at 44.6 kHz) |
+| Level | dB = height / 6 − 100 (6 px per dB) |
+| Digits | 5 decimal digits, one per clock: n / 10 = (n × 52,429) ≫ 19, exact below 43,690 |
+
+**Test tone fix.** The first version kept the tallest bar of each whole 0.23 s window. For the
+sweeping test tone that is wrong: the tone moves about 550 Hz in 0.23 s, every bar has the same
+height, and the first one of the window wins, so the readout trailed the tone. Now it shows the
+latest FFT. At the same time the test tone was moved from its own 48,340 Hz to the mic's rate
+(`tone_gen` SAMPLE_DIV = 64 × `MIC_BCLK_DIV`, 1 kHz step recomputed), so test tone and mic share
+one axis and one readout formula. The sweep still glides from 0 to just under half the sample
+rate (now 22.2 kHz) in about 11 s.
+
+### 6.4 Verified in simulation
+
+| Test | Result |
+|---|---|
+| `tb_h4_frame` + `check_h4.py`: one whole frame, fake spectrum | 921,600 pixels; text read back from the pixels glyph by glyph: " 1002 Hz", " -23 dB", "GAIN +24 dB", title, "kHz"; bars and tick lines in place |
+| `tb_h4_peak` (tone → spectrum with the Gowin FFT gate-level model → readout), fixed 3 kHz | every readout "3007 Hz" (bin 69 = 3,006.7 Hz) |
+| `tb_h4_peak`, tone sweeping one bin per FFT | every readout inside the bins the tone covered during the latest finished FFT |
+
+### 6.5 Build
+
+22 % logic, 23 / 46 block RAMs, 9.5 / 24 DSP; timing met at 74.25 MHz (79.6 MHz achieved).

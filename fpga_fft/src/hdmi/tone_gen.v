@@ -1,7 +1,10 @@
 // tone_gen.v — test signal for H2: a sweeping tone plus a fixed quiet 1 kHz tone.
 //
-// It produces samples at the same rate the microphone will (one every SAMPLE_DIV clocks:
-// 74.25 MHz / 1536 = 48,339.8 Hz), so in H3 the microphone simply replaces this block.
+// It produces one sample every SAMPLE_DIV clocks. The default (74.25 MHz / 1536 = 48,339.8 Hz)
+// is H2's; video_h3.v sets SAMPLE_DIV = 64 x the mic's BCLK_DIV and the 1 kHz step to match,
+// so the test tone and the microphone share one sample rate, one kHz axis and one readout.
+// The frequencies below are for the default rate; the steps are fractions of the sample rate,
+// so at another rate the sweep still ends just under half of it.
 //
 // Each tone is a "phase accumulator": a 32-bit counter that adds a fixed step per sample
 // and wraps around; its top 10 bits index one sine period in rom_sine. A bigger step

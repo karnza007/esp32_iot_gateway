@@ -1,10 +1,13 @@
-// video_h3.v — the H3 chain: a sound source -> spectrum -> bars -> HDMI.
+// video_h3.v — the H3/H4 chain: a sound source -> spectrum -> bars + text -> HDMI.
+// H4 adds text_overlay (title, dB and kHz labels, tick lines) and peak_readout (the loudest
+// frequency and its level), on top of the H3 bars.
 //   src 0: tone_gen (the H2 test tone)
 //   src 1: INMP441 wired to the FPGA, through mic_source
 //   src 2: INMP441 wired to the ESP32, relayed over UART (relay_rx)
 // Both microphone paths go through the same gain24 block, so gain behaves identically.
 module video_h3 #(
-    parameter integer CLAMP = 32700
+    parameter integer CLAMP        = 32700,
+    parameter integer MIC_BCLK_DIV = 26      // mic bit clock = 74.25 MHz / this (see mic_source.v)
 )(
     input  wire       pclk, fclk, rst,
     input  wire [1:0] src,
@@ -20,8 +23,12 @@ module video_h3 #(
 );
     wire signed [15:0] s_tone, s_mic;
     wire               v_tone, v_mic, clip_mic;
-    tone_gen   u_tone (.clk(pclk), .rst(rst), .valid(v_tone), .sample(s_tone));
-    mic_source u_mic  (.clk(pclk), .rst(rst), .i2s_sck(i2s_sck), .i2s_ws(i2s_ws), .i2s_sd(i2s_sd),
+    // the test tone runs at the microphone's sample rate: one sample per 64 bit clocks
+    localparam integer   TONE_DIV = 64 * MIC_BCLK_DIV;
+    localparam [63:0]    INC_1K   = ((64'd1000 * TONE_DIV) << 32) / 64'd74250000;   // 1 kHz step
+    tone_gen #(.SAMPLE_DIV(TONE_DIV), .INC2(INC_1K[31:0])) u_tone (
+        .clk(pclk), .rst(rst), .valid(v_tone), .sample(s_tone));
+    mic_source #(.BCLK_DIV(MIC_BCLK_DIV)) u_mic (.clk(pclk), .rst(rst), .i2s_sck(i2s_sck), .i2s_ws(i2s_ws), .i2s_sd(i2s_sd),
                        .gain(gain), .valid(v_mic), .sample(s_mic), .clipped(clip_mic));
     assign clipped = (src == 2'd1) ? clip_mic : (src == 2'd2) ? clip_rel : 1'b0;
     wire [23:0]        w_rel;
@@ -47,14 +54,24 @@ module video_h3 #(
     wire        de, hs, vs, fs;
     video_timing u_tim (.clk(pclk), .rst(rst), .x(x), .y(y), .de(de), .hs(hs), .vs(vs),
                         .frame_start(fs));
-    wire [7:0] r, g, b;
+    wire [7:0] br, bg, bb;
     bar_display u_bars (.clk(pclk), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
-                        .bar_done(bar_done), .x(x), .y(y), .de(de), .r(r), .g(g), .b(b));
-    reg [2:0] d1 = 0, d2 = 0;
-    always @(posedge pclk) begin d1 <= {de, hs, vs}; d2 <= d1; end
+                        .bar_done(bar_done), .x(x), .y(y), .de(de), .r(br), .g(bg), .b(bb));
 
-    hdmi_out u_out (.pclk(pclk), .fclk(fclk), .rst(rst), .r(r), .g(g), .b(b),
-                    .de(d2[2]), .hs(d2[1]), .vs(d2[0]),
+    wire [76:0] dyn;
+    peak_readout #(.MIC_BCLK_DIV(MIC_BCLK_DIV)) u_peak (
+        .clk(pclk), .rst(rst), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
+        .bar_done(bar_done), .src(src), .gain(gain), .dyn(dyn));
+    wire [23:0] rgb;
+    text_overlay u_text (.clk(pclk), .x(x), .y(y), .de(de), .src(src), .dyn(dyn),
+                         .bar_rgb({br, bg, bb}), .rgb(rgb));
+
+    // the final colour comes 4 clocks after x/y (text_overlay.v): sync signals are delayed by 4
+    reg [2:0] d1 = 0, d2 = 0, d3 = 0, d4 = 0;
+    always @(posedge pclk) begin d1 <= {de, hs, vs}; d2 <= d1; d3 <= d2; d4 <= d3; end
+
+    hdmi_out u_out (.pclk(pclk), .fclk(fclk), .rst(rst), .r(rgb[23:16]), .g(rgb[15:8]), .b(rgb[7:0]),
+                    .de(d4[2]), .hs(d4[1]), .vs(d4[0]),
                     .tmds_clk_p(tmds_clk_p), .tmds_clk_n(tmds_clk_n),
                     .tmds_d_p(tmds_d_p), .tmds_d_n(tmds_d_n));
 endmodule

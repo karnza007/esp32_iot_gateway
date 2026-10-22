@@ -17,7 +17,7 @@ module tb_h3_mic;
     genvar g;
     generate
         for (g = 0; g < 8; g = g + 1) begin : m
-            mic_source #(.BCLK_DIV(77)) u (.clk(clk), .rst(rst), .i2s_sck(sck[g]), .i2s_ws(ws[g]),
+            mic_source #(.BCLK_DIV(26)) u (.clk(clk), .rst(rst), .i2s_sck(sck[g]), .i2s_ws(ws[g]),
                 .i2s_sd(sd), .gain(g[2:0]), .valid(valid[g]), .sample(smp[g]), .clipped());
         end
     endgenerate
@@ -51,12 +51,12 @@ module tb_h3_mic;
     integer f, nfr = 0, t_now = 0, t_last = -1, gap_bad = 0, sck_bad = 0, t_sck = -1, k;
     always @(posedge clk) t_now = t_now + 1;
     always @(posedge sck[0]) begin
-        if (nfr > 0 && t_now - t_sck != 77) sck_bad = sck_bad + 1;   // after start-up
+        if (nfr > 0 && t_now - t_sck != 26) sck_bad = sck_bad + 1;   // after start-up
         t_sck = t_now;
     end
     reg [8*256-1:0] fname;
     always @(posedge clk) if (valid[0]) begin
-        if (t_last >= 0 && t_now - t_last != 64 * 77) gap_bad = gap_bad + 1;
+        if (t_last >= 0 && t_now - t_last != 64 * 26) gap_bad = gap_bad + 1;
         t_last = t_now;
         if (valid !== 8'hFF) begin $display("FAIL: copies out of step"); $finish; end
         // the word whose bits just finished: widx was advanced at the start of its slot
@@ -65,7 +65,7 @@ module tb_h3_mic;
         $fwrite(f, "\n");
         nfr = nfr + 1;
         if (nfr == 40) begin
-            $display("tb_h3_mic: %0d frames; SCK period errors %0d (want 77 clocks); sample gap errors %0d (want 4928)",
+            $display("tb_h3_mic: %0d frames; SCK period errors %0d (want 26 clocks); sample gap errors %0d (want 1664)",
                      nfr, sck_bad, gap_bad);
             $fclose(f);
             $finish;

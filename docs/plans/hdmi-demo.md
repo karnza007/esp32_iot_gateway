@@ -1,6 +1,6 @@
 # HDMI demo — live microphone spectrum on a monitor
 
-**Status:** H1 ✅, H2 ✅ 2026-10-09; H3 ✅ 2026-10-21, direct mic on pins 25/26/29 at 964 kHz (results: `docs/12-hdmi-demo.md` §5). Next: H4.
+**Status:** H1 ✅, H2 ✅ 2026-10-09; H3 ✅ 2026-10-21 (direct mic, pins 25/26/29); H4 ✅ 2026-10-22, mic now at 44,621 Hz (results: `docs/12-hdmi-demo.md` §5–6). All four steps done.
 **Requested by:** the advisor, after the FFT benchmark progress report.
 
 ---
@@ -67,8 +67,8 @@ PLL: `IDIV_SEL=3, FBDIV_SEL=54, ODIV_SEL=2` → 27 × 55 / 4 = 371.25 MHz, VCO 7
 |---|---|---|---|
 | **H1** ✅ | Colour test pattern | clocks, TMDS, serializers, pins, monitor accepts 720p | HDMI cable, report what's on screen |
 | **H2** ✅ | One sharp bar from a test tone generated inside the FPGA | buffer → window → FFT → dB → bars | look |
-| H3 | Live spectrum from the microphone | the full demo | wire the mic (5 wires) |
-| H4 | Gridlines, kHz/dB labels, peak readout | presentable | — |
+| **H3** ✅ | Live spectrum from the microphone | the full demo | wire the mic (5 wires) |
+| **H4** ✅ | Gridlines, kHz/dB labels, peak readout | presentable | look |
 
 ---
 
