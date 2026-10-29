@@ -246,10 +246,17 @@ each step confirmed on the monitor:
 |---|---|---|---|---|---|
 | 77 | 964.3 kHz | 15,067 Hz | 0–7.5 kHz | 14.7 | 2026-10-21 |
 | 39 | 1.904 MHz | 29,748 Hz (≈ 2×) | 0–14.9 kHz | 29.0 | 2026-10-22 |
-| **26 (current)** | **2.856 MHz** | **44,621 Hz** (closest to 44.1 kHz; ÷27 gives 42,969) | 0–22.3 kHz | 43.6 | 2026-10-22 |
+| 26 | 2.856 MHz | 44,621 Hz (closest to 44.1 kHz; ÷27 gives 42,969) | 0–22.3 kHz | 43.6 | 2026-10-22 |
+| **52 (current)** | **1.428 MHz** | **22,311 Hz** (½ of ÷26: twice as fine, half the span) | 0–11.2 kHz | 21.8 | 2026-10-29 |
 
 Exactly 2× (÷38.5) or exactly 44.1 kHz would need a different clock. The test tone now runs at
 the same rate as the mic (§6). SCK/WS drive 8 mA.
+
+**÷52 (2026-10-29):** half the rate, for a finer view of the range voices and instruments use.
+The kHz axis gets a label every **1 kHz** instead of 2 (`gen_h4_text.py` picks this when the span
+is under 15 kHz), so the tick lines land at the same x as before. The test-tone sweep step doubles
+with the sample period, so 0 → 11.2 kHz still takes about 10 s. FFTs per second halve: 47 → 21.8,
+so the bars update about 22 times a second.
 
 ### 5.2 Verified in simulation
 
@@ -384,4 +391,4 @@ Without the ESP32 UART benchmark as well (2026-10-29): `fft_link.v` (the earlier
 with its own FFT, on pins 27/28) was still built in, unused by the demo. Removed: **2,531 logic
 (12 %), 920 registers, 12 / 46 block RAMs, 7.5 / 24 DSP; 83.3 MHz achieved** (12 % spare). The
 slowest path is now inside the Gowin FFT core, not `rom_text`. Per-block table and the
-before/after: `docs/reports/2026-11-01.md` §4; what timing is and how it is calculated: §8. The benchmark keeps its own build (`top.v`).
+before/after: `docs/reports/2026-11-01.md` §4; what timing is and how it is calculated: §9. The benchmark keeps its own build (`top.v`).

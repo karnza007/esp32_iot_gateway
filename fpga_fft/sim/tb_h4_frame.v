@@ -1,7 +1,8 @@
 // tb_h4_frame.v — H4 check: renders one whole 1280x720 frame with the text overlay.
 //
-// A fake spectrum (noise floor around -75 dB, a peak at bin 23 = 1002 Hz at -23 dB, a smaller
-// one at bin 46) is written into bar_display and peak_readout exactly as spectrum.v writes it.
+// A fake spectrum (noise floor around -75 dB, a peak at bin 46 = 1002 Hz at -23 dB at the
+// mic's 22,311 Hz, a smaller one at bin 92) is written into bar_display and peak_readout
+// exactly as spectrum.v writes it.
 // After the readout has updated and the bars have swapped in, one frame of the final colour
 // (what hdmi_out receives) is written as hex, one pixel per line, to +out=<file>;
 // check_h4.py turns it into a PNG and checks the readout text.
@@ -24,7 +25,7 @@ module tb_h4_frame;
     bar_display u_bars (.clk(clk), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
                         .bar_done(bar_done), .x(x), .y(y), .de(de), .r(br), .g(bg), .b(bb));
     wire [76:0] dyn;
-    peak_readout #(.MIC_BCLK_DIV(26), .WIN_BITS(12)) u_peak (
+    peak_readout #(.MIC_BCLK_DIV(52), .WIN_BITS(12)) u_peak (
         .clk(clk), .rst(rst), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
         .bar_done(bar_done), .gain(3'd4), .dyn(dyn));
     wire [23:0] rgb;
@@ -38,8 +39,8 @@ module tb_h4_frame;
         begin
             height = 150 + ((b * 37) % 23);                     // floor around -75 dB
             if (b == 0 || b == 1) height = 560;                 // DC: must be ignored
-            if (b >= 21 && b <= 25) height = 462 - 60 * (b > 23 ? b - 23 : 23 - b);
-            if (b >= 45 && b <= 47) height = 380 - 50 * (b > 46 ? b - 46 : 46 - b);
+            if (b >= 44 && b <= 48) height = 462 - 60 * (b > 46 ? b - 46 : 46 - b);
+            if (b >= 91 && b <= 93) height = 380 - 50 * (b > 92 ? b - 92 : 92 - b);
         end
     endfunction
 

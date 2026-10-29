@@ -38,10 +38,10 @@ title, axis = cell_text(1, 1, 17), cell_text(42, 76, 3)
 print(f"  readout {hz!r} {db!r}   gain {gain!r}   title {title!r}   axis unit {axis!r}")
 ok &= hz == " 1002 Hz" and db == " -23 dB" and gain == "GAIN +24 dB"
 ok &= title == "LIVE FFT SPECTRUM" and axis == "kHz"
-# bar at bin 23 (x 174-175) reaches up to y = 660 - 462 = 198; DC bins 0-1 are drawn too
-bar = img[199:660, 174]
+# bar at bin 46 (x 220-221) reaches up to y = 660 - 462 = 198; DC bins 0-1 are drawn too
+bar = img[199:660, 221]
 ok &= bool((bar == [0, 0xDC, 0x5A]).all())
-# a tick line (mic source: x = 220) is dim grey above the bars, inside the plot
+# a tick line (mic source, 1 kHz: x = 220) is dim grey above the bars, inside the plot
 ok &= bool((img[100, 220] == [0x2A, 0x2A, 0x2A]).all()) and bool((img[30, 220] != [0x2A] * 3).any())
 print("  PASS" if ok else "  FAIL")
 sys.exit(0 if ok else 1)

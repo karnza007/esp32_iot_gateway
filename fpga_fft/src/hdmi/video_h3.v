@@ -7,7 +7,7 @@
 // out of the build on 2026-10-22: the direct mic works, so the relay is no longer needed.)
 module video_h3 #(
     parameter integer CLAMP        = 32700,
-    parameter integer MIC_BCLK_DIV = 26      // mic bit clock = 74.25 MHz / this (see mic_source.v)
+    parameter integer MIC_BCLK_DIV = 52      // mic bit clock = 74.25 MHz / this (see mic_source.v)
 )(
     input  wire       pclk, fclk, rst,
     input  wire [1:0] src,
@@ -24,7 +24,9 @@ module video_h3 #(
     // the test tone runs at the microphone's sample rate: one sample per 64 bit clocks
     localparam integer   TONE_DIV = 64 * MIC_BCLK_DIV;
     localparam [63:0]    INC_1K   = ((64'd1000 * TONE_DIV) << 32) / 64'd74250000;   // 1 kHz step
-    tone_gen #(.SAMPLE_DIV(TONE_DIV), .INC2(INC_1K[31:0])) u_tone (
+    // the sweep step grows with the sample period, so 0 -> fs/2 always takes ~10 s (as in H2)
+    localparam [63:0]    SWEEP    = (64'd4411 * TONE_DIV) / 64'd1536;
+    tone_gen #(.SAMPLE_DIV(TONE_DIV), .SWEEP_STEP(SWEEP[31:0]), .INC2(INC_1K[31:0])) u_tone (
         .clk(pclk), .rst(rst), .valid(v_tone), .sample(s_tone));
     mic_source #(.BCLK_DIV(MIC_BCLK_DIV)) u_mic (.clk(pclk), .rst(rst), .i2s_sck(i2s_sck), .i2s_ws(i2s_ws), .i2s_sd(i2s_sd),
                        .gain(gain), .valid(v_mic), .sample(s_mic), .clipped(clip_mic));

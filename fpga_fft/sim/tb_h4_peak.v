@@ -1,9 +1,9 @@
 // tb_h4_peak.v — H4 check: test tone -> spectrum (Gowin FFT gate-level model) -> peak_readout.
 //
-// The same chain as on the board, with a sample every 16 clocks instead of 1664 to keep the
+// The same chain as on the board, with a sample every 16 clocks instead of 3328 to keep the
 // run short. Tones are set as phase steps per sample (fractions of the sample rate), so the
-// FFT bins and the readout's text are exactly what the board shows at 44,621 Hz.
-//   SWEEP = 0: tone 1 fixed at 3,000 Hz -> bin 68.85 -> the readout must say "3007" (bin 69)
+// FFT bins and the readout's text are exactly what the board shows at 22,311 Hz.
+//   SWEEP = 0: tone 1 fixed at 3,000 Hz -> bin 137.7 -> the readout must say "3007" (bin 138)
 //   SWEEP = 1: tone 1 glides up one bin per FFT block; at every readout the bin shown must lie
 //              in the range the tone covered during the latest FFT whose bars are complete
 // The readout window is 2^16 clocks (4 blocks here) instead of 2^24.
@@ -14,13 +14,13 @@ module tb_h4_peak #(parameter integer SWEEP = 0);
     reg rst = 1'b1;
     GSR GSR (.GSRI(1'b1));
 
-    localparam real FS = 74250000.0 / (64 * 26);                  // the board's sample rate
+    localparam real FS = 74250000.0 / (64 * 52);                  // the board's sample rate
     localparam [31:0] STEP_3K = 3000.0 / FS * 4294967296.0;       // 3 kHz
     wire signed [15:0] s;
     wire               s_valid;
     tone_gen #(.SAMPLE_DIV(16), .INC1_START(SWEEP ? 32'd41943040 : STEP_3K),   // sweep: from bin 10
                .SWEEP_STEP(SWEEP ? 32'd4096 : 32'd0),                          // 1 bin per 1024 samples
-               .INC2(32'd96253543)) u_tone (                                    // 1 kHz at 44,621 Hz
+               .INC2(32'd192507086)) u_tone (                                   // 1 kHz at 22,311 Hz
         .clk(clk), .rst(rst), .valid(s_valid), .sample(s));
 
     wire       bar_we, bar_done, overrun;
@@ -31,7 +31,7 @@ module tb_h4_peak #(parameter integer SWEEP = 0);
         .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h), .bar_done(bar_done),
         .overrun(overrun));
     wire [76:0] dyn;
-    peak_readout #(.MIC_BCLK_DIV(26), .WIN_BITS(16)) u_peak (
+    peak_readout #(.MIC_BCLK_DIV(52), .WIN_BITS(16)) u_peak (
         .clk(clk), .rst(rst), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
         .bar_done(bar_done), .gain(3'd0), .dyn(dyn));
 
@@ -64,7 +64,7 @@ module tb_h4_peak #(parameter integer SWEEP = 0);
                          nread, u_peak.best_bin, hz_text(0), blk_start_bin, blk_end_bin, u_tone.inc1 >> 22);
             end else begin
                 if (hz_text(0) != " 3007") bad = bad + 1;
-                $display("  readout %0d: bin %0d \"%s Hz\"  (want bin 69, \" 3007\")", nread, u_peak.best_bin, hz_text(0));
+                $display("  readout %0d: bin %0d \"%s Hz\"  (want bin 138, \" 3007\")", nread, u_peak.best_bin, hz_text(0));
             end
         end
         if (nread == 7) begin

@@ -3,17 +3,18 @@
 //   INMP441 ─I2S─▶ i2s_master_rx (fpga/src, shared with the audio project) ─▶ 24-bit word
 //                    ─▶ gain: pick 16 of the 24 bits ─▶ saturate ─▶ 16-bit sample
 //
-// CLOCKS: bit clock = 74.25 MHz / 26 = 2.856 MHz (the INMP441 allows 0.5-3.2 MHz);
-// 64 bit clocks per frame -> 44,621.4 samples/s (the closest to 44.1 kHz: /27 gives 42,969),
-// so the screen spans 0-22.3 kHz (43.6 Hz per bar).
+// CLOCKS: bit clock = 74.25 MHz / 52 = 1.428 MHz (the INMP441 allows 0.5-3.2 MHz);
+// 64 bit clocks per frame -> 22,310.7 samples/s, so the screen spans 0-11.2 kHz (21.8 Hz per
+// bar: twice as fine as at /26, for the range where voices and instruments are).
 // History on this board (pins 25/26/29): /77 = 15,067 Hz clean (2026-10-21), /39 = 29,748 Hz
-// clean (2026-10-22). /24 = 3.09 MHz was never seen working, but that was before the wiring fix.
+// and /26 = 44,621 Hz clean (2026-10-22), /52 from 2026-10-29. /24 = 3.09 MHz was never seen
+// working, but that was before the wiring fix.
 // The value actually used is set in video_h3.v (MIC_BCLK_DIV), which also feeds the peak
 // readout and gen_h4_text.py (kHz axis).
 //
 // GAIN: see gain24.v.
 module mic_source #(
-    parameter integer BCLK_DIV = 26
+    parameter integer BCLK_DIV = 52
 )(
     input  wire              clk,
     input  wire              rst,
