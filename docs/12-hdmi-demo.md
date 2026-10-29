@@ -49,7 +49,7 @@ HSYNC and VSYNC. The monitor undoes both steps, so the colours arrive unchanged.
 ```
  27 MHz crystal ─▶ rPLL ×55 ÷4 ─▶ 371.25 MHz ─────────────▶ 4 × OSER10 serializers ONLY
                                       └─▶ CLKDIV ÷5 ─▶ 74.25 MHz ─▶ timing, pattern, TMDS encoders
- 27 MHz crystal ──────────────────────────────────────────▶ ESP32 UART benchmark (unchanged)
+ 27 MHz crystal ──────────────────────────────────────────▶ ESP32 UART benchmark (until 2026-10-29; now its own build)
 ```
 
 | Clock | Calculation | Used by |
@@ -379,3 +379,9 @@ at 74.25 MHz with **74.8 MHz achieved** (0.8 % spare). The slowest path is the t
 (`rom_text`, built from logic, one clock). The design is smaller, so the drop comes from
 placement varying between builds, not from new logic. If a later change fails timing, the fix is
 to split that lookup over two clocks.
+
+Without the ESP32 UART benchmark as well (2026-10-29): `fft_link.v` (the earlier FFT benchmark,
+with its own FFT, on pins 27/28) was still built in, unused by the demo. Removed: **2,531 logic
+(12 %), 920 registers, 12 / 46 block RAMs, 7.5 / 24 DSP; 83.3 MHz achieved** (12 % spare). The
+slowest path is now inside the Gowin FFT core, not `rom_text`. Per-block table and the
+before/after: `docs/reports/2026-11-01.md` §4; what timing is and how it is calculated: §8. The benchmark keeps its own build (`top.v`).

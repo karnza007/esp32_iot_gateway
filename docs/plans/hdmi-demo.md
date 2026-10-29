@@ -36,7 +36,7 @@ second, the bar memory is drawn on the screen. The bar memory decouples the two.
 | Window | **On** |
 | Input clamp | **±32,700** (keeps a tap on the mic out of the core's full-scale wrap) |
 | Bar update | every FFT (~47 /s), adjustable |
-| ESP32 UART benchmark | **kept** in the same design |
+| ESP32 UART benchmark | **kept** in the same design (removed 2026-10-29: unused by the demo; it has its own build) |
 | Labels | H4: title, kHz axis, dB axis, peak readout |
 | IP cores to generate in the GUI | **none**: Gowin built-in blocks (rPLL, CLKDIV, OSER10, TLVDS_OBUF) are used directly |
 
@@ -49,7 +49,7 @@ block. The design just draws 1280×720 normally.
 ```
  27 MHz crystal ─▶ rPLL (×55 ÷4) ─▶ 371.25 MHz ─────────▶ ⑨ the 4 serializers ONLY
                                         └─▶ CLKDIV ÷5 ─▶ 74.25 MHz ─▶ ① … ⑧ (everything else)
- 27 MHz crystal ───────────────────────────────────────▶ ESP32 UART benchmark (unchanged)
+ 27 MHz crystal ───────────────────────────────────────▶ ESP32 UART benchmark (until 2026-10-29; now its own build)
 ```
 
 | Clock | Used by | Why |

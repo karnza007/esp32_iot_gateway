@@ -1,11 +1,7 @@
-// Tang Nano 20K pins for the HDMI demo build (top_hdmi.v): the benchmark pins (top.cst) + HDMI
+// Tang Nano 20K pins for the HDMI demo build (top_hdmi.v). The ESP32 UART pins 27/28 are
+// not used since 2026-10-29 (the benchmark moved out of this build; see top.cst).
 IO_LOC "clk" 4;                 // 27 MHz crystal
 IO_PORT "clk" IO_TYPE=LVCMOS33 PULL_MODE=UP;
-
-IO_LOC "uart_rx" 27;            // <- ESP32-S3 GPIO17 (TX)
-IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;   // pulled up: idle-high if the wire is off
-IO_LOC "uart_tx" 28;            // -> ESP32-S3 GPIO18 (RX)
-IO_PORT "uart_tx" IO_TYPE=LVCMOS33 DRIVE=8;
 
 IO_LOC "led[0]" 15;             // on-board LEDs, lit when low
 IO_LOC "led[1]" 16;
@@ -30,7 +26,7 @@ IO_PORT "tmds_d_p[1]" IO_TYPE=LVDS25 PULL_MODE=NONE DRIVE=3.5 BANK_VCCIO=3.3;
 IO_LOC "tmds_d_p[2]" 39,40;
 IO_PORT "tmds_d_p[2]" IO_TYPE=LVDS25 PULL_MODE=NONE DRIVE=3.5 BANK_VCCIO=3.3;
 
-// INMP441 microphone (H3) — header pins next to the ESP32 UART (27/28)
+// INMP441 microphone (H3) — header pins 25/26/29 (next to the old ESP32 UART pins 27/28)
 IO_LOC "i2s_sck" 25;
 IO_PORT "i2s_sck" IO_TYPE=LVCMOS33 DRIVE=8;   // 8 mA: as in top_mic_uart.cst, where the mic is clean
 IO_LOC "i2s_ws" 26;

@@ -15,18 +15,16 @@
 //
 //   27 MHz crystal ─▶ rPLL ×55÷4 ─▶ 371.25 MHz ─────────────▶ serializers only (fclk)
 //                                       └─▶ CLKDIV ÷5 ─▶ 74.25 MHz (pclk) ─▶ mic/tone, FFT, bars, picture
-//   27 MHz crystal ──────────────────────────────────────────▶ ESP32 UART benchmark (unchanged)
 //
-// The two halves share nothing but the crystal: the benchmark keeps working while the
-// monitor shows the picture.
+// The ESP32 UART FFT benchmark (fft_link.v, pins 27/28) was built in here too until
+// 2026-10-29. The demo never used it, so it was taken out; it has its own build (top.v:
+// fpga_fft/build.sh with no DESIGN).
 module top_hdmi #(
     parameter integer   CLAMP      = 32700, // input limit before the FFT (see spectrum.v)
     parameter [2:0]     GAIN_START = 3'd0,  // microphone gain at power-up: 0 dB (top 16 bits)
     parameter           LED_DIAG   = 1'b1   // 1: LEDs show source + input health (header)
 )(
     input  wire       clk,         // 27 MHz crystal, pin 4
-    input  wire       uart_rx,     // ESP32 benchmark, unchanged
-    output wire       uart_tx,
     output wire [5:0] led,
     output wire       i2s_sck,     // INMP441 SCK, pin 25
     output wire       i2s_ws,      // INMP441 WS,  pin 26
@@ -65,11 +63,6 @@ module top_hdmi #(
                       .tmds_clk_p(tmds_clk_p), .tmds_clk_n(tmds_clk_n),
                       .tmds_d_p(tmds_d_p), .tmds_d_n(tmds_d_n));
 
-    // ---- ESP32 benchmark on the crystal, exactly as in top.v ----
-    wire [5:0] led_link;
-    fft_link #(.CLK_MHZ(27)) u_link (
-        .clk(clk), .clk_ok(1'b1), .uart_rx(uart_rx), .uart_tx(uart_tx), .led(led_link));
-
     // ---- diagnostics for the LEDs (LED_DIAG = 1; meanings in the header) ----
     // Each 56 ms window (2^22 clocks) records what happened; the LEDs show the last window.
     reg sd_m = 0, sd_s = 0;
@@ -90,7 +83,7 @@ module top_hdmi #(
         end
     end
 
-    // LEDs (lit when low): see the header. The benchmark still runs; its LEDs are not shown.
+    // LEDs (lit when low): see the header.
     assign led = LED_DIAG ? {~locked, ~show_bad, 1'b1, ~(show_hi & show_lo),
                              1'b1, ~(src == 2'd1)}
                           : {~locked, ~overrun, ~src[1], ~gain};
