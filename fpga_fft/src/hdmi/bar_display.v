@@ -2,7 +2,9 @@
 //
 // LAYOUT
 //   bars:      x 128..1151 (512 bars x 2 px), bottom at y = 660, up to 600 px tall
-//   gridlines: every 20 dB = 120 px: y = 60 (0 dB), 180, 300, 420, 540, 660 (-100 dB)
+//   gridlines: every 20 dB, matching spectrum.v's FLOOR_DB:
+//     100: 120 px apart: y = 60 (0 dB), 180, 300, 420, 540, 660 (-100 dB)
+//      80: 150 px apart: y = 60 (0 dB), 210, 360, 510, 660 (-80 dB)
 //
 // DOUBLE BUFFER. The heights live in two halves of one memory. The spectrum side writes a
 // whole new set into the back half; when it's complete, the halves swap during the next
@@ -11,7 +13,9 @@
 //
 // Two clocks of delay from x/y to colour (memory read, then compare); the caller delays
 // de/hs/vs by the same amount.
-module bar_display (
+module bar_display #(
+    parameter integer FLOOR_DB = 100
+)(
     input  wire        clk,
     input  wire        bar_we,
     input  wire [8:0]  bar_addr,
@@ -45,7 +49,9 @@ module bar_display (
 
     wire in_x   = (x1 >= X0) && (x1 < X1);
     wire in_bar = in_x && (y1 < Y_BOT) && (y1 + h_q >= Y_BOT);
-    wire grid   = in_x && (y1 == 60 || y1 == 180 || y1 == 300 || y1 == 420 || y1 == 540 || y1 == 660);
+    wire grid   = in_x && ((FLOOR_DB == 80)
+                  ? (y1 == 60 || y1 == 210 || y1 == 360 || y1 == 510 || y1 == 660)
+                  : (y1 == 60 || y1 == 180 || y1 == 300 || y1 == 420 || y1 == 540 || y1 == 660));
     always @(posedge clk) begin
         if (!de1)        {r, g, b} <= 24'h000000;
         else if (in_bar) {r, g, b} <= 24'h00DC5A;       // bars: green

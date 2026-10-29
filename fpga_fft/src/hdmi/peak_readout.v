@@ -7,14 +7,17 @@
 // tone read up to ~550 Hz behind: the first tall bar of the window won.) Conversion:
 //   frequency  Hz = bin x fs / 1024, done as (bin x K + 2^15) >> 16 with K = fs x 64,
 //              so the result is rounded to the nearest Hz. Accurate to one bin (fs/1024).
-//   level      dB = height / 6 - 100     (spectrum.v: 6 px per dB, 0 dB at 600 px)
-// Below -80 dB the frequency shows "---": the loudest thing is the noise floor.
+//   level      dB = height / (600 / FLOOR_DB) - FLOOR_DB   (spectrum.v: 0 dB at 600 px)
+//              FLOOR_DB 80: 7.5 px per dB;  100: 6 px per dB
+// Below -80 dB the frequency shows "---": the loudest thing is the noise floor. (With
+// FLOOR_DB 80 that is any height of 0: everything below the floor.)
 // The gain (0..7 steps of 6 dB) is shown as well. Output: 11 ASCII characters for
 // text_overlay.v, character k at dyn[7k+6:7k]:
 //   0-4  frequency, right-aligned     5-8  level, e.g. " -23"     9-10  gain, e.g. "24"
 module peak_readout #(
     parameter integer MIC_BCLK_DIV = 26,   // must match mic_source.v
-    parameter integer WIN_BITS     = 24
+    parameter integer WIN_BITS     = 24,
+    parameter integer FLOOR_DB     = 80    // must match spectrum.v: 80 or 100
 )(
     input  wire        clk,
     input  wire        rst,
@@ -74,8 +77,16 @@ module peak_readout #(
 
     // ---- 3. level and gain digits (small numbers: done directly) ----
     // m / 10 = (m x 205) >> 11, exact for m < 1029
-    wire [6:0]  lvl  = ((best_h + 32'd3) * 32'd10923) >> 16;   // round(height / 6), 0..100
-    wire [6:0]  m    = 7'd100 - lvl;                            // level is -m dB
+    // lvl = round(height / px per dB):  80: round(2h / 15) = ((2h + 7) x 4369) >> 16
+    //                                  100: round(h / 6)   = ((h + 3) x 10923) >> 16
+    // Two clocks (lvl, then m), so the multiply and the digits are not in one clock: in one,
+    // they missed 74.25 MHz. best_h changes 4 times a second, so the delay is invisible.
+    reg  [6:0]  lvl = 0, m = 0;                                 // level is -m dB
+    always @(posedge clk) begin
+        lvl <= (FLOOR_DB == 80) ? (((best_h * 32'd2 + 32'd7) * 32'd4369) >> 16)
+                                : (((best_h + 32'd3) * 32'd10923) >> 16);
+        m   <= FLOOR_DB[6:0] - lvl;
+    end
     wire [3:0]  m10  = (m * 32'd205) >> 11;
     wire [3:0]  m1   = m - m10 * 4'd10;
     wire [5:0]  gdb  = gain * 3'd6;                             // 0..42 dB
@@ -88,7 +99,7 @@ module peak_readout #(
     always @(posedge clk) begin
         if (step == 3'd0) begin
             // frequency: leading zeros blank; "---" when the peak is below -80 dB
-            if (best_h < 10'd120) begin
+            if (best_h < ((FLOOR_DB == 80) ? 10'd1 : 10'd120)) begin
                 dyn[34:0] <= {MINUS, MINUS, MINUS, SP, SP};     // chars 4..0 = "  ---"
             end else begin
                 dyn[6:0]   <= (dig[0] != 0) ? digit(dig[0]) : SP;

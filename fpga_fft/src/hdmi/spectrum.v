@@ -3,10 +3,10 @@
 //   sample ─▶ gain ─▶ clamp ─▶ x Hann window ─▶ ping-pong buffer ─▶ Gowin FFT ─▶ re² + im²
 //                                              (2 x 1024 samples)              ─▶ dB ─▶ bar height
 //
-// TIMING (74.25 MHz clock, one sample every 1536 clocks = 48.3 kHz):
-//   collecting 1024 samples  = 1,572,864 clocks = 21.2 ms
+// TIMING (74.25 MHz clock; H2: one sample every 1536 clocks = 48.3 kHz):
+//   collecting 1024 samples  = 1,572,864 clocks = 21.2 ms   (H4 at 22,311 Hz: 45.9 ms)
 //   FFT on a full block      =     7,190 clocks = 0.097 ms  (0.5 % of the time available)
-//   heights                  = computed one bin per clock while the FFT unloads, +6 clocks
+//   heights                  = computed one bin per clock while the FFT unloads, +7 clocks
 // The buffer has two halves: while the FFT reads the full half, new samples fill the other,
 // so no sample is ever lost and the FFT is always finished long before the next block.
 //
@@ -15,13 +15,19 @@
 //   CLAMP       limit the input to +-CLAMP before the FFT. The Gowin core wraps around when
 //               values sit near -32768 (benchmark, report §5B); 32700 keeps clear of that.
 //
-// HEIGHT: 6 px per dB, 0 dB (a bin of 32767, the largest possible) at 600 px,
-// -100 dB at 0 px. With P = re² + im²:  height = 60 log10(P) + 58.15 = 18.06 log2(P) + 58.15.
+// HEIGHT: 0 dB (a bin of 32767, the largest possible) at 600 px, -FLOOR_DB at 0 px; anything
+// quieter than the floor is 0 px. With P = re² + im², dB = 10 log10(P) - 90.31, and
+//   FLOOR_DB = 100 (H2):  6   px per dB: height = 60 log10(P) + 58.15
+//   FLOOR_DB =  80 (H4):  7.5 px per dB: height = 75 log10(P) - 77.32
 // log2(P) is found from the position of P's top 1 bit plus a 32-entry table for the
-// fraction, in 1/32 steps (L = 32 log2 P); then height = (289 L + 29773) / 512.
+// fraction, in 1/32 steps (L = 32 log2 P); then height = (HX_MUL L + HX_OFF) / 512:
+//   100: (289 L + 29773) / 512        80: (361 L - 39587) / 512, below 0 -> 0
+// Only these two floors are provided. Kept to 20-bit unsigned arithmetic (subtract and
+// compare instead of signed numbers): 32-bit signed maths here barely met 74.25 MHz.
 module spectrum #(
     parameter integer GAIN_SHIFT = 0,
-    parameter integer CLAMP      = 32700
+    parameter integer CLAMP      = 32700,
+    parameter integer FLOOR_DB   = 100     // bottom of the scale: 100 or 80 dB below full scale
 )(
     input  wire              clk,
     input  wire              rst,
@@ -98,9 +104,10 @@ module spectrum #(
     // stage 2: squares          stage 3: sum
     reg               v2 = 0;  reg [8:0] a2 = 0;  reg [31:0] sq_re = 0, sq_im = 0;
     reg               v3 = 0;  reg [8:0] a3 = 0;  reg [31:0] pw = 0;
-    // stage 4: L = 32 log2(P)   stage 5: height
+    // stage 4: L = 32 log2(P)   stage 5: HX_MUL x L   stage 6: height
     reg               v4 = 0;  reg [8:0] a4 = 0;  reg [9:0] L = 0;  reg zero4 = 0;
-    reg               last3 = 0, last4 = 0, last5 = 0;
+    reg               v5 = 0;  reg [8:0] a5 = 0;  reg [19:0] hm = 0;  reg zero5 = 0;
+    reg               last3 = 0, last4 = 0, last5 = 0, last6 = 0;
 
     function [4:0] top_bit(input [31:0] p);       // index of the highest 1 (p > 0)
         integer k;
@@ -125,17 +132,22 @@ module spectrum #(
 
     wire [4:0]  e  = top_bit(pw);
     wire [31:0] nm = pw << (5'd31 - e);            // top 1 bit moved to bit 31
-    wire [19:0] hx = 20'd289 * L + 20'd29773;
+    localparam [9:0]  HX_MUL = (FLOOR_DB == 80) ? 10'd361 : 10'd289;
+    localparam [19:0] HX_ADD = (FLOOR_DB == 80) ? 20'd0 : 20'd29773;
+    localparam [19:0] HX_SUB = (FLOOR_DB == 80) ? 20'd39587 : 20'd0;
+    wire        below = hm < HX_SUB;                  // quieter than the floor
+    wire [19:0] hx    = hm - HX_SUB;
 
     always @(posedge clk) begin
         v1 <= opd && (idx < 10'd512);  a1 <= idx[8:0];  re1 <= xk_re;  im1 <= xk_im;
         v2 <= v1;  a2 <= a1;  sq_re <= re1 * re1;  sq_im <= im1 * im1;
         v3 <= v2;  a3 <= a2;  pw <= sq_re + sq_im;
         v4 <= v3;  a4 <= a3;  zero4 <= (pw == 0);  L <= {e, 5'd0} + log2_frac(nm[30:26]);
-        bar_we   <= v4;
-        bar_addr <= a4;
-        bar_h    <= zero4 ? 10'd0 : (hx[19:9] > 11'd600) ? 10'd600 : hx[18:9];
-        last3 <= v2 && (a2 == 9'd511);  last4 <= last3;  last5 <= last4;
-        bar_done <= last5;
+        v5 <= v4;  a5 <= a4;  zero5 <= zero4;  hm <= HX_MUL * L + HX_ADD;   // < 2^19 for any L
+        bar_we   <= v5;
+        bar_addr <= a5;
+        bar_h    <= (zero5 || below) ? 10'd0 : (hx[19:9] > 11'd600) ? 10'd600 : hx[18:9];
+        last3 <= v2 && (a2 == 9'd511);  last4 <= last3;  last5 <= last4;  last6 <= last5;
+        bar_done <= last6;
     end
 endmodule

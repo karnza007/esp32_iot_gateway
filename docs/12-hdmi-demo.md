@@ -328,9 +328,9 @@ peak at −23 dB: what `hdmi_out` receives, pixel for pixel. The same layout is 
 |---|---|---|
 | Title, source, sample rate | top row | "LIVE FFT SPECTRUM - TANG NANO 20K + GOWIN FFT", "MIC DIRECT 44621 Hz" or "TEST TONE 44621 Hz" (S1) |
 | Gain | under it | "GAIN +24 dB", follows S2 at once |
-| dB labels | left, at the gridlines | 0 to −100 dB, every 20 dB |
+| dB labels | left, at the gridlines | 0 to −80 dB, every 20 dB (−100 dB until 2026-10-29; see the note under §6.5) |
 | kHz axis | bottom | a label and a dim tick line every 2 kHz; mic and test tone both span 0–22.3 kHz (the ESP32 relay, 0–24 kHz, was removed on 2026-10-22) |
-| Peak readout (yellow) | right | the loudest bin of the latest FFT, about 4 times a second: "1002 Hz", "-23 dB". Below −80 dB: "---" |
+| Peak readout (yellow) | right | the loudest bin of the latest FFT, about 4 times a second: "1002 Hz", "-23 dB". Nothing above −80 dB: "---" |
 
 ### 6.2 How text is drawn
 
@@ -391,4 +391,10 @@ Without the ESP32 UART benchmark as well (2026-10-29): `fft_link.v` (the earlier
 with its own FFT, on pins 27/28) was still built in, unused by the demo. Removed: **2,531 logic
 (12 %), 920 registers, 12 / 46 block RAMs, 7.5 / 24 DSP; 83.3 MHz achieved** (12 % spare). The
 slowest path is now inside the Gowin FFT core, not `rom_text`. Per-block table and the
-before/after: `docs/reports/2026-11-01.md` §4; what timing is and how it is calculated: §9. The benchmark keeps its own build (`top.v`).
+before/after: `docs/reports/2026-11-01.md` §4; what timing is and how it is calculated: Appendix A. The benchmark keeps its own build (`top.v`).
+
+**Display floor at −80 dB (2026-10-29):** the scale is now 0 to −80 dB (7.5 px per dB, gridlines
+150 px apart), set by `FLOOR_DB = 80` in `video_h3.v`; quieter bins are drawn as nothing. The FFT's
+own rounding leaves a "grass" around −80 dB whenever a signal is present (simulation: −90 to −67,
+typically −80); about half of it is now hidden. Build: 2,529 logic, 12 BSRAM, 7 DSP, **85.0 MHz**.
+Details, the timing failure found on the way, and the `build.sh` fix: `docs/reports/2026-11-01.md` §9.

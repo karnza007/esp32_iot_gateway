@@ -7,7 +7,8 @@
 // out of the build on 2026-10-22: the direct mic works, so the relay is no longer needed.)
 module video_h3 #(
     parameter integer CLAMP        = 32700,
-    parameter integer MIC_BCLK_DIV = 52      // mic bit clock = 74.25 MHz / this (see mic_source.v)
+    parameter integer MIC_BCLK_DIV = 52,     // mic bit clock = 74.25 MHz / this (see mic_source.v)
+    parameter integer FLOOR_DB     = 80      // bottom of the dB scale: 80 or 100 (see spectrum.v)
 )(
     input  wire       pclk, fclk, rst,
     input  wire [1:0] src,
@@ -38,7 +39,7 @@ module video_h3 #(
     wire       bar_we, bar_done;
     wire [8:0] bar_addr;
     wire [9:0] bar_h;
-    spectrum #(.GAIN_SHIFT(0), .CLAMP(CLAMP)) u_spec (
+    spectrum #(.GAIN_SHIFT(0), .CLAMP(CLAMP), .FLOOR_DB(FLOOR_DB)) u_spec (
         .clk(pclk), .rst(rst), .s_valid(s_valid), .s_in(s),
         .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h), .bar_done(bar_done),
         .overrun(overrun));
@@ -48,11 +49,11 @@ module video_h3 #(
     video_timing u_tim (.clk(pclk), .rst(rst), .x(x), .y(y), .de(de), .hs(hs), .vs(vs),
                         .frame_start(fs));
     wire [7:0] br, bg, bb;
-    bar_display u_bars (.clk(pclk), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
+    bar_display #(.FLOOR_DB(FLOOR_DB)) u_bars (.clk(pclk), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
                         .bar_done(bar_done), .x(x), .y(y), .de(de), .r(br), .g(bg), .b(bb));
 
     wire [76:0] dyn;
-    peak_readout #(.MIC_BCLK_DIV(MIC_BCLK_DIV)) u_peak (
+    peak_readout #(.MIC_BCLK_DIV(MIC_BCLK_DIV), .FLOOR_DB(FLOOR_DB)) u_peak (
         .clk(pclk), .rst(rst), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
         .bar_done(bar_done), .gain(gain), .dyn(dyn));
     wire [23:0] rgb;

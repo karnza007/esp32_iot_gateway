@@ -39,7 +39,12 @@ s = t[t.find("Max Frequency Summary"):t.find("Total Negative Slack")]
 for name, want, got in re.findall(r"\d+ (\S+) ([0-9.]+)\(MHz\) ([0-9.]+)\(MHz\)", s):
     print(f"  timing: clock {name}: needs {want} MHz, achieves {got} MHz")
 n = t[t.find("Total Negative Slack Summary"):][:400]
-print("  timing violations:", "none" if not re.search(r"(Setup|Hold) -[0-9]", n) else "YES - see the report")
+# the 74.25 MHz CLKDIV clock is missing from Gowin's negative-slack summary, so also compare
+# every clock's "achieves" with its "needs"
+slow = [name for name, want, got in re.findall(r"\d+ (\S+) ([0-9.]+)\(MHz\) ([0-9.]+)\(MHz\)", s)
+        if float(got) < float(want)]
+bad = re.search(r"(Setup|Hold) -[0-9]", n) or slow
+print("  timing violations:", "none" if not bad else "YES - " + (", ".join(slow) or "see the report") + " too slow")
 PY
 grep -E "^(WARN|ERROR)" impl_build.log | grep -v PR1014 | sort | uniq -c | head -20 || true
 if [ "$1" = program ]; then

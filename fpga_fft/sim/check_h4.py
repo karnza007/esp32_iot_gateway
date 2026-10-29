@@ -38,9 +38,16 @@ title, axis = cell_text(1, 1, 17), cell_text(42, 76, 3)
 print(f"  readout {hz!r} {db!r}   gain {gain!r}   title {title!r}   axis unit {axis!r}")
 ok &= hz == " 1002 Hz" and db == " -23 dB" and gain == "GAIN +24 dB"
 ok &= title == "LIVE FFT SPECTRUM" and axis == "kHz"
-# bar at bin 46 (x 220-221) reaches up to y = 660 - 462 = 198; DC bins 0-1 are drawn too
-bar = img[199:660, 221]
-ok &= bool((bar == [0, 0xDC, 0x5A]).all())
+# bar at bin 46 (x 220-221) reaches up to y = 660 - 428 = 232; DC bins 0-1 are drawn too
+bar = img[233:660, 221]
+ok &= bool((bar == [0, 0xDC, 0x5A]).all()) and bool((img[231, 221] != [0, 0xDC, 0x5A]).any())
+# gridlines for the -80 dB floor: every 150 px (y 60, 210, 360, 510, 660), none at the old 180
+grid = [bool((img[y, 1100] == [0x46] * 3).all()) for y in (60, 210, 360, 510, 180)]
+print(f"  gridlines at y 60/210/360/510: {grid[:4]}, at old y 180: {grid[4]}")
+ok &= all(grid[:4]) and not grid[4]
+labels = [cell_text(r, 1, 6) for r in (3, 13, 22, 31, 41)]
+print(f"  dB labels {labels}")
+ok &= labels == ["  0 dB", "-20 dB", "-40 dB", "-60 dB", "-80 dB"]
 # a tick line (mic source, 1 kHz: x = 220) is dim grey above the bars, inside the plot
 ok &= bool((img[100, 220] == [0x2A, 0x2A, 0x2A]).all()) and bool((img[30, 220] != [0x2A] * 3).any())
 print("  PASS" if ok else "  FAIL")

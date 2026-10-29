@@ -26,7 +26,7 @@ module tb_h4_peak #(parameter integer SWEEP = 0);
     wire       bar_we, bar_done, overrun;
     wire [8:0] bar_addr;
     wire [9:0] bar_h;
-    spectrum #(.GAIN_SHIFT(0), .CLAMP(32700)) u_spec (
+    spectrum #(.GAIN_SHIFT(0), .CLAMP(32700), .FLOOR_DB(80)) u_spec (
         .clk(clk), .rst(rst), .s_valid(s_valid), .s_in(s),
         .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h), .bar_done(bar_done),
         .overrun(overrun));

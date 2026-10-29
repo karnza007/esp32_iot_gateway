@@ -22,7 +22,7 @@ module tb_h4_frame;
     reg [8:0]  bar_addr = 0;
     reg [9:0]  bar_h = 0;
     wire [7:0] br, bg, bb;
-    bar_display u_bars (.clk(clk), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
+    bar_display #(.FLOOR_DB(80)) u_bars (.clk(clk), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
                         .bar_done(bar_done), .x(x), .y(y), .de(de), .r(br), .g(bg), .b(bb));
     wire [76:0] dyn;
     peak_readout #(.MIC_BCLK_DIV(52), .WIN_BITS(12)) u_peak (
@@ -37,10 +37,11 @@ module tb_h4_frame;
     // the fake spectrum
     function [9:0] height(input integer b);
         begin
-            height = 150 + ((b * 37) % 23);                     // floor around -75 dB
-            if (b == 0 || b == 1) height = 560;                 // DC: must be ignored
-            if (b >= 44 && b <= 48) height = 462 - 60 * (b > 46 ? b - 46 : 46 - b);
-            if (b >= 91 && b <= 93) height = 380 - 50 * (b > 92 ? b - 92 : 92 - b);
+            // heights at 7.5 px per dB, 0 px = -80 dB (FLOOR_DB 80)
+            height = 30 + ((b * 37) % 23);                      // floor around -75 dB
+            if (b == 0 || b == 1) height = 550;                 // DC: must be ignored
+            if (b >= 44 && b <= 48) height = 428 - 75 * (b > 46 ? b - 46 : 46 - b);   // -23 dB
+            if (b >= 91 && b <= 93) height = 325 - 62 * (b > 92 ? b - 92 : 92 - b);
         end
     endfunction
 

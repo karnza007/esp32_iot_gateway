@@ -23,6 +23,7 @@ PCLK = 74.25e6
 
 src_v = open(os.path.join(HDMI, "video_h3.v")).read()
 MIC_DIV = int(re.search(r"parameter integer MIC_BCLK_DIV\s*=\s*(\d+)", src_v).group(1))
+FLOOR_DB = int(re.search(r"parameter integer FLOOR_DB\s*=\s*(\d+)", src_v).group(1))
 # src values, as in video_h3.v: 0 test tone, 1 direct mic (the ESP32 relay, src 2, was removed)
 SOURCES = [
     ("TEST TONE", PCLK / (64 * MIC_DIV)),       # tone_gen: run at the mic's rate (video_h3.v)
@@ -110,8 +111,8 @@ for s, (name, fs) in enumerate(SOURCES):
 put_right(2, 72, "GAIN +", CYAN)              # live 9-10: gain in dB
 put_live(2, 73, 9, 2, CYAN)
 put(2, 75, " dB", CYAN)
-for db, row in zip(range(0, -101, -20), (3, 11, 18, 26, 33, 41)):   # gridlines y 60..660
-    put_right(row, 6, f"{db} dB", GREY)
+for db in range(0, -FLOOR_DB - 1, -20):        # gridlines every 20 dB from y 60 (0 dB) to 660
+    put_right((60 + 600 * -db // FLOOR_DB) // 16, 6, f"{db} dB", GREY)
 put(4, 72, "PEAK", GREY)
 put_live(5, 72, 0, 5, YELLOW)                 # live 0-4: peak frequency, Hz
 put(5, 77, " Hz", YELLOW)
@@ -175,5 +176,5 @@ for (row, col), w in cells.items():
                         px[col * 16 + c * 2 + dx, vis * 16 + r * 2 + dy] = RGB[w >> 8]
 os.makedirs(os.path.join(HERE, "..", "docs", "figures"), exist_ok=True)
 img.save(os.path.join(HERE, "..", "docs", "figures", "h4_layout.png"))
-print(f"mic BCLK_DIV {MIC_DIV}: fs {SOURCES[1][1]:.1f} Hz; {len(cells)} text cells; "
+print(f"floor -{FLOOR_DB} dB; mic BCLK_DIV {MIC_DIV}: fs {SOURCES[1][1]:.1f} Hz; {len(cells)} text cells; "
       f"ticks per source {[len(t) for t in ticks]}")
