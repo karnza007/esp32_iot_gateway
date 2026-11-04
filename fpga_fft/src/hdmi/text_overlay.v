@@ -14,6 +14,8 @@
 //   clock 3: font ROM                        clock 4: final colour
 // (The address has a clock of its own: computed and looked up in one clock, it missed
 // 74.25 MHz by a hair.) The caller delays de/hs/vs by 4.
+// The text ROM is a block RAM since 2026-11-04 (as a logic table, 400 cells and 11 deep, it
+// was the slowest path). Address = page x 3600 + row x 80 + column; codes 0-15 = live.
 module text_overlay (
     input  wire        clk,
     input  wire [11:0] x, y,           // the same x/y that go into bar_display
@@ -24,15 +26,17 @@ module text_overlay (
     output reg  [23:0] rgb = 24'h000000
 );
     // ---- clock 1: which cell ----
-    reg [13:0] addr1 = 0;
+    reg [12:0] addr1 = 0;
+    wire [12:0] row80 = {y[9:4], 6'd0} + {y[9:4], 4'd0};            // row x 80
     reg [11:0] x1 = 0, y1 = 0;
     reg        de1 = 1'b0, page1 = 1'b0;
     always @(posedge clk) begin
-        addr1 <= {page, y[9:4], x[10:4]}; x1 <= x; y1 <= y; de1 <= de; page1 <= page;
+        addr1 <= (page ? 13'd3600 : 13'd0) + row80 + x[10:4];
+        x1 <= x; y1 <= y; de1 <= de; page1 <= page;
     end
 
     // ---- clock 2: which character is in this cell; is there a tick line at this x ----
-    wire [9:0] t_q;
+    wire [8:0] t_q;
     wire       tick_q;
     rom_text  u_text (.clk(clk), .addr(addr1), .q(t_q));
     rom_ticks u_tick (.clk(clk), .page(page1), .x(x1), .q(tick_q));
@@ -41,7 +45,7 @@ module text_overlay (
     always @(posedge clk) begin x2 <= x1; y2 <= y1; de2 <= de1; end
 
     // ---- clock 3: the glyph row of that character ----
-    wire [6:0] code = t_q[7] ? dyn[7 * t_q[3:0] +: 7] : t_q[6:0];
+    wire [6:0] code = (t_q[6:4] == 3'd0) ? dyn[7 * t_q[3:0] +: 7] : t_q[6:0];   // 0-15: live
     wire [7:0] f_q;
     rom_font u_font (.clk(clk), .addr({code, y2[3:1]}), .q(f_q));
     wire plot2 = (x2 >= 12'd128) && (x2 < 12'd1152) && (y2 >= 12'd60) && (y2 < 12'd660);
@@ -51,7 +55,7 @@ module text_overlay (
     reg [23:0] bar3 = 0;
     always @(posedge clk) begin
         fx3   <= x2[3:1];
-        col3  <= t_q[9:8];
+        col3  <= t_q[8:7];
         de3   <= de2;
         tick3 <= tick_q && plot2;
         bar3  <= bar_rgb;                // 2 clocks after x/y in, so 3 here

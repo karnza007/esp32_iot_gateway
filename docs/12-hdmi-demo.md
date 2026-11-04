@@ -436,3 +436,8 @@ applies the Hann window as the FFT reads, so an FFT can start every 512 samples 
 PEAK update twice as often, the spectrogram shows 5.9 s (labels −5 s … now). Build: 2,645 logic,
 27 BSRAM, 7 DSP, 75.5 MHz (slowest: the text-ROM lookup). Details: `docs/reports/2026-11-08.md`
 §11.
+
+**Text table in block RAM (2026-11-04):** `rom_text` (400 logic cells, the slowest path) is now
+a block RAM: address page × 3,600 + row × 80 + column, 9-bit words (codes 0–15 = live
+characters). Both pages pixel-identical. Build: 2,297 logic, 32 BSRAM, 7 DSP, **81.9 MHz**;
+the slowest paths are inside the Gowin FFT core. Details: `docs/reports/2026-11-08.md` §12.
