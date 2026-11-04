@@ -419,3 +419,13 @@ BSRAM, 6.5 DSP, **89.0 MHz**; the slowest path is back inside the Gowin FFT core
 ROM holds one page per mode (address {page, row, column}); the spectrogram page has its own
 title, the same source/gain/PEAK, and so far an empty plot. Build: 2,289 logic, 11 BSRAM,
 6.5 DSP, 81.6 MHz. Details: `docs/reports/2026-11-08.md` §9.
+
+**Spectrogram (2026-11-04, step 3):** `spectrogram_display.v` takes the same 512 heights per FFT
+as the bars, joins bin pairs (the louder of the two) into 256 rows, turns each into one of 16
+colours (5 dB per step, black at −80 to −75 dB, then matplotlib's "inferno" map) and writes them
+as one column of a 256 × 256 × 4-bit picture in 16 block RAMs. The screen (layout A) shows the
+latest 256 columns = 11.7 s, newest at the right; scrolling is only a moving start column,
+updated in vertical blanking. Labels: kHz on the left, −10 s … now along the bottom, colour scale
+on the right (`gen_h4_text.py` page 1 and `rom_spec.v`). Build: 2,614 logic (13 %), 876
+registers, **27 / 46 block RAMs**, 7 / 24 DSP, 82.7 MHz. Details: `docs/reports/2026-11-08.md`
+§10.

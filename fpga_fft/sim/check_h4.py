@@ -1,12 +1,11 @@
 """check_h4.py — turn tb_h4_frame.v's pixels into a PNG and check the picture.
 
-    python check_h4.py <pixels.txt> <out.png> [page]
+    python check_h4.py <pixels.txt> <out.png>
 
 Checks: a whole 1280x720 frame; the peak readout cells show "1002 Hz" / "-23 dB" (compared
 glyph by glyph with the font in gen_h4_text.py), the gain and the title.
-page 0 (bars, the default): the bars are green where the fake spectrum says; gridlines and dB
-labels; the tick lines sit behind the bars.
-page 1 (spectrogram, step 2): the plot area, the dB labels and the kHz axis are all black.
+The bars page: the bars are green where the fake spectrum says; gridlines and dB labels; the
+tick lines sit behind the bars. (The spectrogram page: tb_h5_spec.v / check_h5.py.)
 """
 import os
 import sys
@@ -17,7 +16,6 @@ from PIL import Image
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import gen_h4_text as g  # noqa: E402  (re-generates the ROMs; same output)
 
-page = int(sys.argv[3]) if len(sys.argv) > 3 else 0
 px = np.array([int(l, 16) for l in open(sys.argv[1]) if l.strip()], dtype=np.uint32)
 ok = px.size == 1280 * 720
 print(f"  {px.size} pixels (want {1280 * 720})")
@@ -40,15 +38,6 @@ hz, db, gain = cell_text(5, 72, 8), cell_text(6, 72, 7), cell_text(2, 67, 11)
 title, axis = cell_text(1, 1, 17), cell_text(42, 76, 3)
 print(f"  readout {hz!r} {db!r}   gain {gain!r}   title {title!r}   axis unit {axis!r}")
 ok &= hz == " 1002 Hz" and db == " -23 dB" and gain == "GAIN +24 dB"
-if page == 1:
-    title = cell_text(1, 1, 16)
-    plot = img[60:660, 128:1152]
-    left, axis_row = img[48:672, 0:112], img[672:688, :]
-    print(f"  page 1: title {title!r}; non-black pixels: plot {int(plot.any(axis=2).sum())}, "
-          f"dB-label column {int(left.any(axis=2).sum())}, kHz row {int(axis_row.any(axis=2).sum())}")
-    ok &= title == "LIVE SPECTROGRAM" and not plot.any() and not left.any() and not axis_row.any()
-    print("  PASS" if ok else "  FAIL")
-    sys.exit(0 if ok else 1)
 ok &= title == "LIVE FFT SPECTRUM" and axis == "kHz"
 # bar at bin 46 (x 220-221) reaches up to y = 660 - 428 = 232; DC bins 0-1 are drawn too
 bar = img[233:660, 221]

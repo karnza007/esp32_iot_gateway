@@ -6,8 +6,8 @@
 // Each font pixel is drawn as a 2x2 block. The text ROM holds one page per display mode
 // (page 0 = bars, 1 = spectrogram; see gen_h4_text.py). A cell marked "live" takes its
 // character from dyn (peak_readout.v) instead of the ROM.
-// On page 1 the bars and tick lines are not drawn: the plot area stays black (the
-// spectrogram will be drawn there).
+// bar_rgb is the picture under the text: bar_display's on page 0, spectrogram_display's on
+// page 1 (video_h3.v picks). The kHz tick lines are drawn on page 0 only (rom_ticks).
 //
 // TIMING. bar_display gives the bar colour 2 clocks after x/y. This block takes 4:
 //   clock 1: text ROM address (row/column)   clock 2: text ROM and tick ROM
@@ -37,8 +37,8 @@ module text_overlay (
     rom_text  u_text (.clk(clk), .addr(addr1), .q(t_q));
     rom_ticks u_tick (.clk(clk), .page(page1), .x(x1), .q(tick_q));
     reg [11:0] x2 = 0, y2 = 0;
-    reg        de2 = 1'b0, page2 = 1'b0;
-    always @(posedge clk) begin x2 <= x1; y2 <= y1; de2 <= de1; page2 <= page1; end
+    reg        de2 = 1'b0;
+    always @(posedge clk) begin x2 <= x1; y2 <= y1; de2 <= de1; end
 
     // ---- clock 3: the glyph row of that character ----
     wire [6:0] code = t_q[7] ? dyn[7 * t_q[3:0] +: 7] : t_q[6:0];
@@ -47,19 +47,17 @@ module text_overlay (
     wire plot2 = (x2 >= 12'd128) && (x2 < 12'd1152) && (y2 >= 12'd60) && (y2 < 12'd660);
     reg [2:0]  fx3 = 0;
     reg [1:0]  col3 = 0;
-    reg        de3 = 1'b0, tick3 = 1'b0, page3 = 1'b0;
+    reg        de3 = 1'b0, tick3 = 1'b0;
     reg [23:0] bar3 = 0;
     always @(posedge clk) begin
         fx3   <= x2[3:1];
         col3  <= t_q[9:8];
         de3   <= de2;
-        page3 <= page2;
         tick3 <= tick_q && plot2;
         bar3  <= bar_rgb;                // 2 clocks after x/y in, so 3 here
     end
 
-    // ---- clock 4: final colour. Text sits outside the plot, ticks go behind the bars;
-    //      page 1 shows text only ----
+    // ---- clock 4: final colour. Text sits outside the plot, ticks go behind the bars ----
     wire lit = f_q[3'd7 - fx3];
     reg [23:0] text_rgb;
     always @(*)
@@ -72,7 +70,6 @@ module text_overlay (
     always @(posedge clk)
         if (!de3)                         rgb <= 24'h000000;
         else if (lit)                     rgb <= text_rgb;
-        else if (page3)                   rgb <= 24'h000000;
         else if (tick3 && bar3 == 24'h0)  rgb <= 24'h2A2A2A;   // tick: dimmer than the gridlines
         else                              rgb <= bar3;
 endmodule
