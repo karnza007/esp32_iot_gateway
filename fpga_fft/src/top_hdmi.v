@@ -1,16 +1,16 @@
 // top_hdmi.v — HDMI demo build (docs/plans/hdmi-demo.md). Step H3: live microphone spectrum.
 //
 // CONTROLS (the board's two buttons)
-//   pin 88 button (S1): unused for now (it was mic <-> test tone until 2026-11-04; it will
-//                       switch the display between bars and spectrogram). The mic is on pins
-//                       25/26/29.
+//   pin 88 button (S1): display mode  bars <-> spectrogram   (starts on bars; until 2026-11-04
+//                       S1 switched mic <-> test tone). The mic is on pins 25/26/29.
 //   pin 87 button (S2): gain +6 dB, 0 -> +42 dB, then back to 0     (starts at 0 dB: the top
 //                       16 of the mic's 24 bits)
 // LEDs (lit when low), with LED_DIAG = 1:
 //   2 = mic: SD wire active (seen high and low in the last 56 ms)
 //   4 = trouble: the FFT overran (last 56 ms)
 //   5 = video PLL locked
-//   0, 1, 3 = unused (off)
+//   0 = display mode: on = spectrogram, off = bars
+//   1, 3 = unused (off)
 //   DESIGN=hdmi fpga_fft/build.sh
 //
 //   27 MHz crystal ─▶ rPLL ×55÷4 ─▶ 371.25 MHz ─────────────▶ serializers only (fclk)
@@ -29,7 +29,7 @@ module top_hdmi #(
     output wire       i2s_sck,     // INMP441 SCK, pin 25
     output wire       i2s_ws,      // INMP441 WS,  pin 26
     input  wire       i2s_sd,      // INMP441 SD,  pin 29
-    input  wire [1:0] btn,         // [0] = pin 88 (unused for now), [1] = pin 87 (gain)
+    input  wire [1:0] btn,         // [0] = pin 88 (display mode), [1] = pin 87 (gain)
     output wire       tmds_clk_p, tmds_clk_n,
     output wire [2:0] tmds_d_p, tmds_d_n
 );
@@ -45,16 +45,19 @@ module top_hdmi #(
         else if (!vrst_cnt[4])  vrst_cnt <= vrst_cnt + 1'b1;
     wire vrst = !vrst_cnt[4];
 
-    // buttons -> gain (S1, pressed[0], is not used yet)
+    // buttons -> display mode and gain
     wire [1:0] pressed;
     buttons u_btn (.clk(pclk), .btn(btn), .pressed(pressed));
+    reg       mode    = 1'b0;                       // 0 = bars, 1 = spectrogram
     reg [2:0] gain    = GAIN_START;
-    always @(posedge pclk)
+    always @(posedge pclk) begin
+        if (pressed[0]) mode    <= ~mode;
         if (pressed[1]) gain    <= gain + 1'b1;          // wraps 7 -> 0
+    end
 
     wire overrun, clipped;
     video_h3 #(.CLAMP(CLAMP)) u_video (
-                      .pclk(pclk), .fclk(fclk), .rst(vrst), .gain(gain),
+                      .pclk(pclk), .fclk(fclk), .rst(vrst), .mode(mode), .gain(gain),
                       .i2s_sck(i2s_sck), .i2s_ws(i2s_ws), .i2s_sd(i2s_sd),
                       .overrun(overrun), .clipped(clipped),
                       .tmds_clk_p(tmds_clk_p), .tmds_clk_n(tmds_clk_n),
@@ -82,6 +85,6 @@ module top_hdmi #(
 
     // LEDs (lit when low): see the header.
     assign led = LED_DIAG ? {~locked, ~show_bad, 1'b1, ~(show_hi & show_lo),
-                             1'b1, 1'b1}
+                             1'b1, ~mode}
                           : {~locked, ~overrun, 1'b1, ~gain};
 endmodule

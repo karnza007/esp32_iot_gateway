@@ -9,7 +9,7 @@
 //   iverilog -g2012 -s tb_h4_frame -o h4.vvp sim/tb_h4_frame.v src/hdmi/{video_timing,
 //            bar_display,peak_readout,text_overlay,rom_text,rom_font,rom_ticks}.v
 `timescale 1ns/1ps
-module tb_h4_frame;
+module tb_h4_frame #(parameter PAGE = 0);   // display mode: 0 bars, 1 spectrogram
     reg clk = 1'b0;
     always #6.734 clk = ~clk;                     // 74.25 MHz
     reg rst = 1'b1;
@@ -29,7 +29,7 @@ module tb_h4_frame;
         .clk(clk), .rst(rst), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
         .bar_done(bar_done), .gain(3'd4), .dyn(dyn));
     wire [23:0] rgb;
-    text_overlay u_text (.clk(clk), .x(x), .y(y), .de(de), .src(2'd0), .dyn(dyn),
+    text_overlay u_text (.clk(clk), .x(x), .y(y), .de(de), .page(PAGE[0]), .dyn(dyn),
                          .bar_rgb({br, bg, bb}), .rgb(rgb));
     reg [2:0] d1 = 0, d2 = 0, d3 = 0, d4 = 0;
     always @(posedge clk) begin d1 <= {de, hs, vs}; d2 <= d1; d3 <= d2; d4 <= d3; end

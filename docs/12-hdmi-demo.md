@@ -414,3 +414,8 @@ log table → add, 19 cells in one clock) is now 4a (top bit + the 5 bits below 
 and 4b (table + add). Bar heights are bit-identical, one clock later. Build: 2,278 logic, 11
 BSRAM, 6.5 DSP, **89.0 MHz**; the slowest path is back inside the Gowin FFT core. Details:
 `docs/reports/2026-11-08.md` §8.
+
+**Display modes (2026-11-04):** S1 toggles bars ↔ spectrogram (LED 0 on = spectrogram). The text
+ROM holds one page per mode (address {page, row, column}); the spectrogram page has its own
+title, the same source/gain/PEAK, and so far an empty plot. Build: 2,289 logic, 11 BSRAM,
+6.5 DSP, 81.6 MHz. Details: `docs/reports/2026-11-08.md` §9.

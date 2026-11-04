@@ -1,6 +1,8 @@
 // video_h3.v — the H3/H4 chain: the microphone -> spectrum -> bars + text -> HDMI.
 // H4 adds text_overlay (title, dB and kHz labels, tick lines) and peak_readout (the loudest
 // frequency and its level), on top of the H3 bars.
+// mode (S1) picks the screen: 0 = bars, 1 = spectrogram (2026-11-04: so far its own text
+// page and an empty plot; the spectrogram itself is the next step).
 // The only source is the INMP441 wired to the FPGA, through mic_source. Earlier sources, now
 // out of the build:
 //   - the INMP441 on the ESP32, relayed over UART by relay_rx.v (removed 2026-10-22: the
@@ -13,6 +15,7 @@ module video_h3 #(
     parameter integer FLOOR_DB     = 80      // bottom of the dB scale: 80 or 100 (see spectrum.v)
 )(
     input  wire       pclk, fclk, rst,
+    input  wire       mode,              // display: 0 = bars, 1 = spectrogram (S1)
     input  wire [2:0] gain,
     output wire       i2s_sck, i2s_ws,
     input  wire       i2s_sd,
@@ -47,7 +50,7 @@ module video_h3 #(
         .clk(pclk), .rst(rst), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
         .bar_done(bar_done), .gain(gain), .dyn(dyn));
     wire [23:0] rgb;
-    text_overlay u_text (.clk(pclk), .x(x), .y(y), .de(de), .src(2'd0), .dyn(dyn),
+    text_overlay u_text (.clk(pclk), .x(x), .y(y), .de(de), .page(mode), .dyn(dyn),
                          .bar_rgb({br, bg, bb}), .rgb(rgb));
 
     // the final colour comes 4 clocks after x/y (text_overlay.v): sync signals are delayed by 4
