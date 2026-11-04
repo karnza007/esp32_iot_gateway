@@ -326,7 +326,7 @@ peak at −23 dB: what `hdmi_out` receives, pixel for pixel. The same layout is 
 
 | Part | Where | Detail |
 |---|---|---|
-| Title, source, sample rate | top row | "LIVE FFT SPECTRUM - TANG NANO 20K + GOWIN FFT", "MIC DIRECT 44621 Hz" or "TEST TONE 44621 Hz" (S1) |
+| Title, source, sample rate | top row | "LIVE FFT SPECTRUM - TANG NANO 20K + GOWIN FFT", "MIC DIRECT 44621 Hz" or "TEST TONE 44621 Hz" (S1). Since 2026-11-04 always "MIC DIRECT 22311 Hz" (test tone removed, §6.5) |
 | Gain | under it | "GAIN +24 dB", follows S2 at once |
 | dB labels | left, at the gridlines | 0 to −80 dB, every 20 dB (−100 dB until 2026-10-29; see the note under §6.5) |
 | kHz axis | bottom | a label and a dim tick line every 2 kHz; mic and test tone both span 0–22.3 kHz (the ESP32 relay, 0–24 kHz, was removed on 2026-10-22) |
@@ -398,3 +398,13 @@ before/after: `docs/reports/2026-11-01.md` §4; what timing is and how it is cal
 own rounding leaves a "grass" around −80 dB whenever a signal is present (simulation: −90 to −67,
 typically −80); about half of it is now hidden. Build: 2,529 logic, 12 BSRAM, 7 DSP, **85.0 MHz**.
 Details, the timing failure found on the way, and the `build.sh` fix: `docs/reports/2026-11-01.md` §9.
+
+**Test tone removed (2026-11-04):** the next step is a spectrogram, and S1 will switch between
+bars and spectrogram, so the test tone and the mic ↔ tone selector are out of the HDMI build.
+The mic is the only source; the header always shows "MIC DIRECT 22311 Hz"; S1 does nothing until
+the mode switch; LED 0 is off. `tone_gen.v` stays: H2, the mic-UART build and the simulations
+(`tb_h4_peak`, as a known input) still use it. Build: **2,207 logic (11 %), 771 registers, 11 / 46
+block RAMs, 6.5 / 24 DSP; 74.27 MHz achieved** (0.02 % spare). The slowest path is the dB
+conversion in `spectrum.v` (normalise + log, one clock), unchanged logic placed differently. It
+passes, but the next change should split it over two clocks. Details:
+`docs/reports/2026-11-08.md`.

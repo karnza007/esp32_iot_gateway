@@ -9,8 +9,9 @@ THE TEXT GRID. The 1280x720 picture is 80 x 45 cells of 16x16 px. Each cell show
 character: a 5x7 glyph (this file's own font) drawn at 2x inside an 8x8 cell. rom_text holds a
 10-bit word per cell:  [9:8] colour  [7] 1 = "live character k" (k = [3:0], set by
 peak_readout.v)  [6:0] ASCII code.
-Rows 1 (title + source) and 42 (kHz axis) change with the source, so one version per source
-is stored below the visible picture: row 1 is read from row 45 + src, row 42 from 48 + src.
+Rows 1 (title + source) and 42 (kHz axis) can change with text_overlay's src input, so one
+version per entry of SOURCES is stored below the visible picture: row 1 is read from row
+45 + src, row 42 from 48 + src. Since 2026-11-04 the mic is the only source (src 0).
 """
 import os
 import re
@@ -24,9 +25,9 @@ PCLK = 74.25e6
 src_v = open(os.path.join(HDMI, "video_h3.v")).read()
 MIC_DIV = int(re.search(r"parameter integer MIC_BCLK_DIV\s*=\s*(\d+)", src_v).group(1))
 FLOOR_DB = int(re.search(r"parameter integer FLOOR_DB\s*=\s*(\d+)", src_v).group(1))
-# src values, as in video_h3.v: 0 test tone, 1 direct mic (the ESP32 relay, src 2, was removed)
+# src values, as video_h3.v feeds text_overlay: 0 = direct mic, the only source. (Until
+# 2026-11-04 src 0 was the test tone and 1 the mic; the ESP32 relay, src 2, went 2026-10-22.)
 SOURCES = [
-    ("TEST TONE", PCLK / (64 * MIC_DIV)),       # tone_gen: run at the mic's rate (video_h3.v)
     ("MIC DIRECT", PCLK / (64 * MIC_DIV)),      # mic_source: 64 bit clocks per sample
 ]
 COLS, ROWS, VAR_TITLE, VAR_AXIS = 80, 45, 45, 48
@@ -92,7 +93,7 @@ def put_live(row, col, first, n, colour):
 
 TITLE = "LIVE FFT SPECTRUM - TANG NANO 20K + GOWIN FFT"
 # a label every 2 kHz when the axis is wide (fs 44.6 kHz: 0-22 kHz), every 1 kHz when narrow
-STEP_KHZ = 2 if SOURCES[1][1] > 30000 else 1
+STEP_KHZ = 2 if SOURCES[0][1] > 30000 else 1
 ticks = []
 for s, (name, fs) in enumerate(SOURCES):
     put(VAR_TITLE + s, 1, TITLE, WHITE)
@@ -159,11 +160,11 @@ for s, xs in enumerate(ticks):
 lines += ["            default: q <= 1'b0;", "        endcase", "endmodule", ""]
 write("rom_ticks.v", "\n".join(lines))
 
-# ---- preview of the fixed text (source 1, live characters shown as '#') ----
+# ---- preview of the fixed text (source 0, live characters shown as '#') ----
 img = Image.new("RGB", (1280, 720))
 px = img.load()
 for (row, col), w in cells.items():
-    vis = {VAR_TITLE + 1: 1, VAR_AXIS + 1: 42}.get(row, row)
+    vis = {VAR_TITLE: 1, VAR_AXIS: 42}.get(row, row)
     if vis >= ROWS:
         continue
     ch = "#" if w & 0x80 else chr(w & 0x7F)
@@ -176,5 +177,5 @@ for (row, col), w in cells.items():
                         px[col * 16 + c * 2 + dx, vis * 16 + r * 2 + dy] = RGB[w >> 8]
 os.makedirs(os.path.join(HERE, "..", "docs", "figures"), exist_ok=True)
 img.save(os.path.join(HERE, "..", "docs", "figures", "h4_layout.png"))
-print(f"floor -{FLOOR_DB} dB; mic BCLK_DIV {MIC_DIV}: fs {SOURCES[1][1]:.1f} Hz; {len(cells)} text cells; "
+print(f"floor -{FLOOR_DB} dB; mic BCLK_DIV {MIC_DIV}: fs {SOURCES[0][1]:.1f} Hz; {len(cells)} text cells; "
       f"ticks per source {[len(t) for t in ticks]}")

@@ -1,17 +1,18 @@
-// video_h3.v — the H3/H4 chain: a sound source -> spectrum -> bars + text -> HDMI.
+// video_h3.v — the H3/H4 chain: the microphone -> spectrum -> bars + text -> HDMI.
 // H4 adds text_overlay (title, dB and kHz labels, tick lines) and peak_readout (the loudest
 // frequency and its level), on top of the H3 bars.
-//   src 0: tone_gen (the H2 test tone)
-//   src 1: INMP441 wired to the FPGA, through mic_source
-// (H3 also had src 2, the INMP441 on the ESP32 relayed over UART by relay_rx.v. It was taken
-// out of the build on 2026-10-22: the direct mic works, so the relay is no longer needed.)
+// The only source is the INMP441 wired to the FPGA, through mic_source. Earlier sources, now
+// out of the build:
+//   - the INMP441 on the ESP32, relayed over UART by relay_rx.v (removed 2026-10-22: the
+//     direct mic works, so the relay is no longer needed);
+//   - the H2 test tone, tone_gen.v (removed 2026-11-04, to make room for the spectrogram; the
+//     simulations still use it as a known input, e.g. sim/tb_h4_peak.v).
 module video_h3 #(
     parameter integer CLAMP        = 32700,
     parameter integer MIC_BCLK_DIV = 52,     // mic bit clock = 74.25 MHz / this (see mic_source.v)
     parameter integer FLOOR_DB     = 80      // bottom of the dB scale: 80 or 100 (see spectrum.v)
 )(
     input  wire       pclk, fclk, rst,
-    input  wire [1:0] src,
     input  wire [2:0] gain,
     output wire       i2s_sck, i2s_ws,
     input  wire       i2s_sd,
@@ -20,21 +21,10 @@ module video_h3 #(
     output wire       tmds_clk_p, tmds_clk_n,
     output wire [2:0] tmds_d_p, tmds_d_n
 );
-    wire signed [15:0] s_tone, s_mic;
-    wire               v_tone, v_mic, clip_mic;
-    // the test tone runs at the microphone's sample rate: one sample per 64 bit clocks
-    localparam integer   TONE_DIV = 64 * MIC_BCLK_DIV;
-    localparam [63:0]    INC_1K   = ((64'd1000 * TONE_DIV) << 32) / 64'd74250000;   // 1 kHz step
-    // the sweep step grows with the sample period, so 0 -> fs/2 always takes ~10 s (as in H2)
-    localparam [63:0]    SWEEP    = (64'd4411 * TONE_DIV) / 64'd1536;
-    tone_gen #(.SAMPLE_DIV(TONE_DIV), .SWEEP_STEP(SWEEP[31:0]), .INC2(INC_1K[31:0])) u_tone (
-        .clk(pclk), .rst(rst), .valid(v_tone), .sample(s_tone));
+    wire signed [15:0] s;
+    wire               s_valid;
     mic_source #(.BCLK_DIV(MIC_BCLK_DIV)) u_mic (.clk(pclk), .rst(rst), .i2s_sck(i2s_sck), .i2s_ws(i2s_ws), .i2s_sd(i2s_sd),
-                       .gain(gain), .valid(v_mic), .sample(s_mic), .clipped(clip_mic));
-    assign clipped = (src == 2'd1) ? clip_mic : 1'b0;
-
-    wire signed [15:0] s       = (src == 2'd1) ? s_mic : s_tone;
-    wire               s_valid = (src == 2'd1) ? v_mic : v_tone;
+                       .gain(gain), .valid(s_valid), .sample(s), .clipped(clipped));
 
     wire       bar_we, bar_done;
     wire [8:0] bar_addr;
@@ -57,7 +47,7 @@ module video_h3 #(
         .clk(pclk), .rst(rst), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
         .bar_done(bar_done), .gain(gain), .dyn(dyn));
     wire [23:0] rgb;
-    text_overlay u_text (.clk(pclk), .x(x), .y(y), .de(de), .src(src), .dyn(dyn),
+    text_overlay u_text (.clk(pclk), .x(x), .y(y), .de(de), .src(2'd0), .dyn(dyn),
                          .bar_rgb({br, bg, bb}), .rgb(rgb));
 
     // the final colour comes 4 clocks after x/y (text_overlay.v): sync signals are delayed by 4

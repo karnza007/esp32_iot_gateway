@@ -1,20 +1,20 @@
 // top_hdmi.v — HDMI demo build (docs/plans/hdmi-demo.md). Step H3: live microphone spectrum.
 //
 // CONTROLS (the board's two buttons)
-//   pin 88 button (S1): source  direct mic <-> test tone   (starts on the direct mic, pins
-//                       25/26/29). The ESP32-relayed mic of H3 is no longer built in.
+//   pin 88 button (S1): unused for now (it was mic <-> test tone until 2026-11-04; it will
+//                       switch the display between bars and spectrogram). The mic is on pins
+//                       25/26/29.
 //   pin 87 button (S2): gain +6 dB, 0 -> +42 dB, then back to 0     (starts at 0 dB: the top
 //                       16 of the mic's 24 bits)
 // LEDs (lit when low), with LED_DIAG = 1:
-//   0 = source: on = direct mic, off = test tone
-//   2 = direct mic: SD wire active (seen high and low in the last 56 ms)
+//   2 = mic: SD wire active (seen high and low in the last 56 ms)
 //   4 = trouble: the FFT overran (last 56 ms)
 //   5 = video PLL locked
-//   1, 3 = unused (off)
+//   0, 1, 3 = unused (off)
 //   DESIGN=hdmi fpga_fft/build.sh
 //
 //   27 MHz crystal ─▶ rPLL ×55÷4 ─▶ 371.25 MHz ─────────────▶ serializers only (fclk)
-//                                       └─▶ CLKDIV ÷5 ─▶ 74.25 MHz (pclk) ─▶ mic/tone, FFT, bars, picture
+//                                       └─▶ CLKDIV ÷5 ─▶ 74.25 MHz (pclk) ─▶ mic, FFT, bars, picture
 //
 // The ESP32 UART FFT benchmark (fft_link.v, pins 27/28) was built in here too until
 // 2026-10-29. The demo never used it, so it was taken out; it has its own build (top.v:
@@ -22,14 +22,14 @@
 module top_hdmi #(
     parameter integer   CLAMP      = 32700, // input limit before the FFT (see spectrum.v)
     parameter [2:0]     GAIN_START = 3'd0,  // microphone gain at power-up: 0 dB (top 16 bits)
-    parameter           LED_DIAG   = 1'b1   // 1: LEDs show source + input health (header)
+    parameter           LED_DIAG   = 1'b1   // 1: LEDs show input health (header)
 )(
     input  wire       clk,         // 27 MHz crystal, pin 4
     output wire [5:0] led,
     output wire       i2s_sck,     // INMP441 SCK, pin 25
     output wire       i2s_ws,      // INMP441 WS,  pin 26
     input  wire       i2s_sd,      // INMP441 SD,  pin 29
-    input  wire [1:0] btn,         // [0] = pin 88 (source), [1] = pin 87 (gain)
+    input  wire [1:0] btn,         // [0] = pin 88 (unused for now), [1] = pin 87 (gain)
     output wire       tmds_clk_p, tmds_clk_n,
     output wire [2:0] tmds_d_p, tmds_d_n
 );
@@ -45,19 +45,16 @@ module top_hdmi #(
         else if (!vrst_cnt[4])  vrst_cnt <= vrst_cnt + 1'b1;
     wire vrst = !vrst_cnt[4];
 
-    // buttons -> source and gain
+    // buttons -> gain (S1, pressed[0], is not used yet)
     wire [1:0] pressed;
     buttons u_btn (.clk(pclk), .btn(btn), .pressed(pressed));
-    reg [1:0] src     = 2'd1;                       // start on the direct mic
     reg [2:0] gain    = GAIN_START;
-    always @(posedge pclk) begin
-        if (pressed[0]) src <= (src == 2'd1) ? 2'd0 : 2'd1;          // mic <-> tone
+    always @(posedge pclk)
         if (pressed[1]) gain    <= gain + 1'b1;          // wraps 7 -> 0
-    end
 
     wire overrun, clipped;
     video_h3 #(.CLAMP(CLAMP)) u_video (
-                      .pclk(pclk), .fclk(fclk), .rst(vrst), .src(src), .gain(gain),
+                      .pclk(pclk), .fclk(fclk), .rst(vrst), .gain(gain),
                       .i2s_sck(i2s_sck), .i2s_ws(i2s_ws), .i2s_sd(i2s_sd),
                       .overrun(overrun), .clipped(clipped),
                       .tmds_clk_p(tmds_clk_p), .tmds_clk_n(tmds_clk_n),
@@ -85,6 +82,6 @@ module top_hdmi #(
 
     // LEDs (lit when low): see the header.
     assign led = LED_DIAG ? {~locked, ~show_bad, 1'b1, ~(show_hi & show_lo),
-                             1'b1, ~(src == 2'd1)}
-                          : {~locked, ~overrun, ~src[1], ~gain};
+                             1'b1, 1'b1}
+                          : {~locked, ~overrun, 1'b1, ~gain};
 endmodule
