@@ -3,9 +3,11 @@
 // LAYOUT
 //   plot:          x 128..1151, y 148..659 (1024 x 512 px). Time runs left -> right (newest
 //                  column at the right edge), frequency bottom -> top (0 -> fs/2).
-//   one point:     4 px wide (one FFT block) x 2 px tall (two FFT bins)
+//   one point:     4 px wide (one FFT) x 2 px tall (two FFT bins). 256 columns = 5.9 s with
+//                  50 % overlap (an FFT every 512 samples), 11.7 s without
 //   colour scale:  x 1168..1183, y 148..659: the 16 colours, 32 px each, 0 dB at the top
-//   tick marks:    left of the plot (every 1 kHz) and below it (every 2 s), from spec_ticks
+//   tick marks:    left of the plot (every 1 kHz) and below it (every 1 s; 2 s without
+//                  overlap), from spec_ticks
 //
 // WRITING. spectrum.v sends 512 bar heights per FFT (bar_we/bar_addr/bar_h, then bar_done),
 // the same stream bar_display gets. Each pair of bins (2r, 2r+1) becomes row r: the louder of

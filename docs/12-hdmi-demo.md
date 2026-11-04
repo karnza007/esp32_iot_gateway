@@ -429,3 +429,10 @@ updated in vertical blanking. Labels: kHz on the left, −10 s … now along the
 on the right (`gen_h4_text.py` page 1 and `rom_spec.v`). Build: 2,614 logic (13 %), 876
 registers, **27 / 46 block RAMs**, 7 / 24 DSP, 82.7 MHz. Details: `docs/reports/2026-11-08.md`
 §10.
+
+**50 % overlap (2026-11-04, step 4):** `spectrum.v` now keeps a ring of 2,048 raw samples and
+applies the Hann window as the FFT reads, so an FFT can start every 512 samples on the latest
+1,024 (`OVERLAP = 1` in `video_h3.v`; 0 = the old blocks, bit-identical). 43.6 FFTs/s: bars and
+PEAK update twice as often, the spectrogram shows 5.9 s (labels −5 s … now). Build: 2,645 logic,
+27 BSRAM, 7 DSP, 75.5 MHz (slowest: the text-ROM lookup). Details: `docs/reports/2026-11-08.md`
+§11.

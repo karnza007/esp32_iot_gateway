@@ -27,7 +27,7 @@ module spec_colour (
 endmodule
 
 // spec_ticks: tick marks left of the plot every 1 kHz (x 120-127; 43.58 Hz per row)
-// and below it every 2 s (y 660-667; 21.79 columns per second).
+// and below it every 1 s (y 660-667; 43.58 columns per second).
 module spec_ticks (
     input  wire [11:0] x, y,
     output wire        q

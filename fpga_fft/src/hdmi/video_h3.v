@@ -13,7 +13,8 @@
 module video_h3 #(
     parameter integer CLAMP        = 32700,
     parameter integer MIC_BCLK_DIV = 52,     // mic bit clock = 74.25 MHz / this (see mic_source.v)
-    parameter integer FLOOR_DB     = 80      // bottom of the dB scale: 80 or 100 (see spectrum.v)
+    parameter integer FLOOR_DB     = 80,     // bottom of the dB scale: 80 or 100 (see spectrum.v)
+    parameter integer OVERLAP      = 1       // 1: an FFT every 512 samples, 50 % overlap (spectrum.v)
 )(
     input  wire       pclk, fclk, rst,
     input  wire       mode,              // display: 0 = bars, 1 = spectrogram (S1)
@@ -33,7 +34,7 @@ module video_h3 #(
     wire       bar_we, bar_done;
     wire [8:0] bar_addr;
     wire [9:0] bar_h;
-    spectrum #(.GAIN_SHIFT(0), .CLAMP(CLAMP), .FLOOR_DB(FLOOR_DB)) u_spec (
+    spectrum #(.GAIN_SHIFT(0), .CLAMP(CLAMP), .FLOOR_DB(FLOOR_DB), .OVERLAP(OVERLAP)) u_spec (
         .clk(pclk), .rst(rst), .s_valid(s_valid), .s_in(s),
         .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h), .bar_done(bar_done),
         .overrun(overrun));

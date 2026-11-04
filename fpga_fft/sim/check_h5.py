@@ -82,6 +82,7 @@ print(f"  title {title!r}; kHz labels {khz}; scale {scale_labels}; dB unit {cell
 print(f"  time axis {times.strip()!r}")
 ok &= title == "LIVE SPECTROGRAM" and khz == [f"{k:>2}" for k in range(len(g.f_ticks))]
 ok &= scale_labels == ["   0", " -40", " -80"] and cell_text(7, 4, 3) == "kHz"
-ok &= times.split() == ["-10s", "-8s", "-6s", "-4s", "-2s", "now"]
+ts = [t for t in range(0, 100, g.STEP_S) if 255 - t * g.COL_PER_S >= 1]
+ok &= times.split() == ["now" if t == 0 else f"-{t}s" for t in reversed(ts)]
 print("  PASS" if ok else "  FAIL")
 sys.exit(0 if ok else 1)

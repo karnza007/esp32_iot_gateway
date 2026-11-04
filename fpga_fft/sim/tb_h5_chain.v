@@ -2,8 +2,9 @@
 // gate-level model) -> spectrogram_display. The classic spectrogram test: a sweeping tone must
 // draw a straight rising line.
 //
-// The tone starts at bin 10 and rises 6 bins (3 rows) per FFT block; a second, fixed 1 kHz
-// tone 40 dB quieter (bin 46, row 23) runs under it. A sample every 16 clocks instead of 3328
+// The tone starts at bin 10 and rises 6 bins (3 rows) per 1024 samples; a second, fixed 1 kHz
+// tone 40 dB quieter (bin 46, row 23) runs under it. With 50 % overlap (as on the board) there
+// is an FFT every 512 samples, so the line rises 1.5 rows per column. A sample every 16 clocks instead of 3328
 // keeps the run short; the bins are the same as on the board. After 40 blocks the picture
 // memory is written out, one line per column (256 colour numbers, row 0 first), to
 // +out=<file>; check_h5_chain.py checks the line.
@@ -26,7 +27,7 @@ module tb_h5_chain;
     wire       bar_we, bar_done, overrun;
     wire [8:0] bar_addr;
     wire [9:0] bar_h;
-    spectrum #(.GAIN_SHIFT(0), .CLAMP(32700), .FLOOR_DB(80)) u_spec (
+    spectrum #(.GAIN_SHIFT(0), .CLAMP(32700), .FLOOR_DB(80), .OVERLAP(1)) u_spec (
         .clk(clk), .rst(rst), .s_valid(s_valid), .s_in(s),
         .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h), .bar_done(bar_done),
         .overrun(overrun));

@@ -1,14 +1,24 @@
 // spectrum.v — samples in, 512 bar heights out (one per FFT bin, in screen pixels).
 //
-//   sample ─▶ gain ─▶ clamp ─▶ x Hann window ─▶ ping-pong buffer ─▶ Gowin FFT ─▶ re² + im²
-//                                              (2 x 1024 samples)              ─▶ dB ─▶ bar height
+//   sample ─▶ gain ─▶ clamp ─▶ ring buffer ─▶ x Hann window ─▶ Gowin FFT ─▶ re² + im²
+//                              (2048 raw samples)  (as the FFT reads)         ─▶ dB ─▶ bar height
+//
+// OVERLAP. Each FFT takes the latest 1024 samples. OVERLAP = 0: a new FFT every 1024 samples
+// (blocks side by side). OVERLAP = 1: every 512 samples, so each block is half the previous
+// one and half new (50 % overlap): twice as many FFTs, and a sound at the edge of one block
+// (where the window fades it out) is in the middle of the next. Because a sample is used twice,
+// at different window positions, the buffer keeps raw samples and the window is applied as
+// the FFT reads them. (Until 2026-11-04 the window was applied when storing, into two halves
+// of 1024; OVERLAP = 0 gives exactly the same blocks as that.)
 //
 // TIMING (74.25 MHz clock; H2: one sample every 1536 clocks = 48.3 kHz):
-//   collecting 1024 samples  = 1,572,864 clocks = 21.2 ms   (H4 at 22,311 Hz: 45.9 ms)
-//   FFT on a full block      =     7,190 clocks = 0.097 ms  (0.5 % of the time available)
+//   collecting 1024 samples  = 1,572,864 clocks = 21.2 ms   (H4 at 22,311 Hz: 45.9 ms;
+//                                                            with OVERLAP, 512: 22.9 ms)
+//   FFT on a full block      =     7,190 clocks = 0.097 ms  (0.4 % of H4's 22.9 ms)
 //   heights                  = computed one bin per clock while the FFT unloads, +8 clocks
-// The buffer has two halves: while the FFT reads the full half, new samples fill the other,
-// so no sample is ever lost and the FFT is always finished long before the next block.
+// The ring holds 2048 samples: while the FFT reads the latest 1024, new samples go into the
+// other half, so no sample is ever lost and the FFT is always finished long before the next
+// block.
 //
 // GAIN and CLAMP are parameters to tune for the real microphone (H3):
 //   GAIN_SHIFT  multiply the input by 2^GAIN_SHIFT (quiet sounds need a boost)
@@ -27,7 +37,8 @@
 module spectrum #(
     parameter integer GAIN_SHIFT = 0,
     parameter integer CLAMP      = 32700,
-    parameter integer FLOOR_DB   = 100     // bottom of the scale: 100 or 80 dB below full scale
+    parameter integer FLOOR_DB   = 100,    // bottom of the scale: 100 or 80 dB below full scale
+    parameter integer OVERLAP    = 0       // 1: a new FFT every 512 samples (50 % overlap)
 )(
     input  wire              clk,
     input  wire              rst,
@@ -39,48 +50,57 @@ module spectrum #(
     output reg               bar_done = 1'b0,      // pulse: all 512 heights of a block written
     output reg               overrun = 1'b0        // sticky: a block arrived while the FFT was busy
 );
-    // ---- 1. gain, clamp, window, store ----
+    // ---- 1. gain, clamp, store in the ring ----
     wire signed [31:0] gained = $signed(s_in) <<< GAIN_SHIFT;
     localparam signed [15:0] CL = CLAMP;
     wire signed [15:0] clamped = (gained >  CLAMP) ?  CL :
                                  (gained < -CLAMP) ? -CL : gained[15:0];
-    reg  [9:0]  widx = 0;
-    reg         wbank = 1'b0;
-    wire [15:0] hann;
-    rom_hann u_hann (.clk(clk), .addr(widx), .q(hann));   // ready long before the next sample
+    localparam integer HOP = OVERLAP ? 512 : 1024;    // samples between FFTs
 
-    reg signed [31:0] prod = 0;
-    reg               p_valid = 1'b0;
-    reg [15:0] buf_mem [0:2047];                  // two halves of 1024 windowed samples
-    reg        block_ready = 1'b0, ready_bank = 1'b0;
+    reg signed [15:0] c_q = 0;
+    reg               c_valid = 1'b0;
+    reg [15:0] buf_mem [0:2047];                  // ring of 2048 raw samples
+    reg [10:0] wptr = 0;                          // where the next sample goes
+    reg [9:0]  hop_cnt = 0;                       // samples since the last block
+    reg        filled = 1'b0;                     // the first 1024 samples are in
+    reg        block_ready = 1'b0;
+    reg [10:0] ready_base = 0;                    // ring position of the block's first sample
     always @(posedge clk) begin
-        p_valid     <= s_valid;
-        prod        <= clamped * $signed({1'b0, hann});
+        c_valid     <= s_valid;
+        c_q         <= clamped;
         block_ready <= 1'b0;
         if (rst) begin
-            widx <= 0; wbank <= 1'b0;
-        end else if (p_valid) begin
-            buf_mem[{wbank, widx}] <= prod[30:15];   // x window / 32768
-            widx <= widx + 1'b1;
-            if (widx == 10'd1023) begin               // a half is full: hand it to the FFT
-                block_ready <= 1'b1;
-                ready_bank  <= wbank;
-                wbank       <= ~wbank;
+            wptr <= 0; hop_cnt <= 0; filled <= 1'b0;
+        end else if (c_valid) begin
+            buf_mem[wptr] <= c_q;
+            wptr    <= wptr + 1'b1;
+            hop_cnt <= (hop_cnt == HOP - 1) ? 10'd0 : hop_cnt + 1'b1;
+            if (wptr == 11'd1023) filled <= 1'b1;
+            if (hop_cnt == HOP - 1 && (filled || wptr == 11'd1023)) begin
+                block_ready <= 1'b1;              // the latest 1024 samples: hand them to the FFT
+                ready_base  <= wptr - 11'd1023;
             end
         end
     end
 
-    // ---- 2. FFT (driven exactly as in fft_link.v: sample idx while ipd, idx+1 ahead) ----
-    reg         fft_start = 1'b0, running = 1'b0, rbank = 1'b0;
+    // ---- 2. window + FFT (driven exactly as in fft_link.v: sample idx while ipd, idx+1 ahead).
+    // The sample and its window value are read together, one clock ahead; their product goes
+    // straight into the FFT (x window / 32768, as the old store-time window did).
+    reg         fft_start = 1'b0, running = 1'b0;
+    reg  [10:0] rbase = 0;
     wire [9:0]  idx;
     wire [15:0] xk_re, xk_im;
     wire        sod, ipd, eod, busy, soud, opd, eoud;
-    reg  [15:0] rd_q = 0;
-    always @(posedge clk) rd_q <= buf_mem[{rbank, ipd ? idx + 10'd1 : 10'd0}];
+    wire [9:0]  ridx = ipd ? idx + 10'd1 : 10'd0;
+    reg  signed [15:0] rd_q = 0;
+    wire [15:0] hann;
+    always @(posedge clk) rd_q <= buf_mem[rbase + {1'b0, ridx}];
+    rom_hann u_hann (.clk(clk), .addr(ridx), .q(hann));
+    wire signed [31:0] prod = rd_q * $signed({1'b0, hann});
 
     fft_1024 u_fft (
         .clk(clk), .rst(rst), .start(fft_start),
-        .xn_re(rd_q), .xn_im(16'd0),
+        .xn_re(prod[30:15]), .xn_im(16'd0),
         .idx(idx), .xk_re(xk_re), .xk_im(xk_im),
         .sod(sod), .ipd(ipd), .eod(eod), .busy(busy),
         .soud(soud), .opd(opd), .eoud(eoud));
@@ -91,7 +111,7 @@ module spectrum #(
         else if (block_ready) begin
             if (running) overrun <= 1'b1;
             else begin
-                rbank     <= ready_bank;
+                rbase     <= ready_base;
                 fft_start <= 1'b1;
                 running   <= 1'b1;
             end

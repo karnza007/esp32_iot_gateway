@@ -8,7 +8,7 @@
 //              in the range the tone covered during the latest FFT whose bars are complete
 // The readout window is 2^16 clocks (4 blocks here) instead of 2^24.
 `timescale 1ns/1ps
-module tb_h4_peak #(parameter integer SWEEP = 0);
+module tb_h4_peak #(parameter integer SWEEP = 0, parameter integer OVERLAP = 1);
     reg clk = 1'b0;
     always #6.734 clk = ~clk;                     // 74.25 MHz
     reg rst = 1'b1;
@@ -26,7 +26,7 @@ module tb_h4_peak #(parameter integer SWEEP = 0);
     wire       bar_we, bar_done, overrun;
     wire [8:0] bar_addr;
     wire [9:0] bar_h;
-    spectrum #(.GAIN_SHIFT(0), .CLAMP(32700), .FLOOR_DB(80)) u_spec (
+    spectrum #(.GAIN_SHIFT(0), .CLAMP(32700), .FLOOR_DB(80), .OVERLAP(OVERLAP)) u_spec (
         .clk(clk), .rst(rst), .s_valid(s_valid), .s_in(s),
         .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h), .bar_done(bar_done),
         .overrun(overrun));
@@ -44,13 +44,14 @@ module tb_h4_peak #(parameter integer SWEEP = 0);
     endfunction
 
     // the tone's bins during the latest block whose bars are complete: a block's range is
-    // noted when its samples are all in (block_ready) and becomes "shown" at its bar_done
-    integer nread = 0, bad = 0, tone_bin_start = 0, pend_start = 0, pend_end = 0;
+    // noted when its samples are all in (block_ready) and becomes "shown" at its bar_done.
+    // A block is the latest 1024 samples: it began 1 block_ready ago without overlap, 2 with.
+    integer nread = 0, bad = 0, bin_1ago = 0, bin_2ago = 0, pend_start = 0, pend_end = 0;
     integer blk_start_bin = 0, blk_end_bin = 0;
     always @(posedge clk) begin
         if (u_spec.block_ready) begin
-            pend_start = tone_bin_start;  pend_end = u_tone.inc1 >> 22;
-            tone_bin_start = u_tone.inc1 >> 22;
+            pend_start = OVERLAP ? bin_2ago : bin_1ago;  pend_end = u_tone.inc1 >> 22;
+            bin_2ago = bin_1ago;  bin_1ago = u_tone.inc1 >> 22;
         end
         if (bar_done) begin blk_start_bin = pend_start; blk_end_bin = pend_end; end
     end

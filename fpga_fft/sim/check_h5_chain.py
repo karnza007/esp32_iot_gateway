@@ -2,9 +2,10 @@
 
     python check_h5_chain.py <columns.txt> <out.png>
 
-During block c the tone sweeps bins 10 + 6c .. 16 + 6c, i.e. rows 5 + 3c .. 8 + 3c. Checks:
+With 50 % overlap, FFT c covers samples 512c .. 512c + 1023, during which the tone sweeps bins
+10 + 3c .. 16 + 3c, i.e. rows 5 + 1.5c .. 8 + 1.5c. Checks:
   - in every column the brightest row lies in that range (one row of slack each side);
-  - a straight-line fit through those rows rises 3 rows per column;
+  - a straight-line fit through those rows rises 1.5 rows per column;
   - the quiet 1 kHz tone (row 23) shows (colour >= 3) wherever the sweep is far from it;
   - rows far from both tones are dark (colour <= 2) in at least 95 % of places.
 Also writes the 40 columns as a picture (4 x 2 px per point, as on the screen).
@@ -23,13 +24,13 @@ n = len(cols)
 ok = cols.shape == (40, 256)
 
 top = cols.argmax(axis=1)
-lo, hi = 5 + 3 * np.arange(n) - 1, 8 + 3 * np.arange(n) + 1
+lo, hi = 5 + 1.5 * np.arange(n) - 1, 8 + 1.5 * np.arange(n) + 1
 in_range = (top >= lo) & (top <= hi)
 slope, icpt = np.polyfit(np.arange(n), top, 1)
 print(f"  brightest row in the sweep's range: {int(in_range.sum())} of {n} columns; "
-      f"line fit: {slope:.2f} rows per column (want 3), start row {icpt:.1f} (want ~6.5)")
+      f"line fit: {slope:.2f} rows per column (want 1.5), start row {icpt:.1f} (want ~6.5)")
 print(f"  brightest colour per column: min {cols.max(axis=1).min()}, max {cols.max(axis=1).max()}")
-ok &= bool(in_range.all()) and abs(slope - 3) < 0.1
+ok &= bool(in_range.all()) and abs(slope - 1.5) < 0.05
 
 far = [c for c in range(n) if abs(top[c] - 23) > 10]
 k1 = cols[far, 23]
