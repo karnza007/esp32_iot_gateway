@@ -408,3 +408,9 @@ block RAMs, 6.5 / 24 DSP; 74.27 MHz achieved** (0.02 % spare). The slowest path 
 conversion in `spectrum.v` (normalise + log, one clock), unchanged logic placed differently. It
 passes, but the next change should split it over two clocks. Details:
 `docs/reports/2026-11-08.md`.
+
+**dB conversion split over two clocks (2026-11-04):** `spectrum.v` stage 4 (top bit → shift →
+log table → add, 19 cells in one clock) is now 4a (top bit + the 5 bits below it, registered)
+and 4b (table + add). Bar heights are bit-identical, one clock later. Build: 2,278 logic, 11
+BSRAM, 6.5 DSP, **89.0 MHz**; the slowest path is back inside the Gowin FFT core. Details:
+`docs/reports/2026-11-08.md` §8.

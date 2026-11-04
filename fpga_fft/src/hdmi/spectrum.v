@@ -6,7 +6,7 @@
 // TIMING (74.25 MHz clock; H2: one sample every 1536 clocks = 48.3 kHz):
 //   collecting 1024 samples  = 1,572,864 clocks = 21.2 ms   (H4 at 22,311 Hz: 45.9 ms)
 //   FFT on a full block      =     7,190 clocks = 0.097 ms  (0.5 % of the time available)
-//   heights                  = computed one bin per clock while the FFT unloads, +7 clocks
+//   heights                  = computed one bin per clock while the FFT unloads, +8 clocks
 // The buffer has two halves: while the FFT reads the full half, new samples fill the other,
 // so no sample is ever lost and the FFT is always finished long before the next block.
 //
@@ -104,10 +104,14 @@ module spectrum #(
     // stage 2: squares          stage 3: sum
     reg               v2 = 0;  reg [8:0] a2 = 0;  reg [31:0] sq_re = 0, sq_im = 0;
     reg               v3 = 0;  reg [8:0] a3 = 0;  reg [31:0] pw = 0;
-    // stage 4: L = 32 log2(P)   stage 5: HX_MUL x L   stage 6: height
+    // stage 4a: top bit e + the 5 bits below it   stage 4b: L = 32 log2(P)
+    // stage 5: HX_MUL x L   stage 6: height
+    // (4a/4b were one stage until 2026-11-04: find top bit -> shift -> table -> add was 19 cells
+    //  in a row, 13.2 ns of a 13.5 ns clock. Split, each half is about half a clock.)
+    reg               v4a = 0; reg [8:0] a4a = 0; reg [4:0] e4 = 0, m4 = 0; reg zero4a = 0;
     reg               v4 = 0;  reg [8:0] a4 = 0;  reg [9:0] L = 0;  reg zero4 = 0;
     reg               v5 = 0;  reg [8:0] a5 = 0;  reg [19:0] hm = 0;  reg zero5 = 0;
-    reg               last3 = 0, last4 = 0, last5 = 0, last6 = 0;
+    reg               last3 = 0, last4a = 0, last4 = 0, last5 = 0, last6 = 0;
 
     function [4:0] top_bit(input [31:0] p);       // index of the highest 1 (p > 0)
         integer k;
@@ -142,12 +146,13 @@ module spectrum #(
         v1 <= opd && (idx < 10'd512);  a1 <= idx[8:0];  re1 <= xk_re;  im1 <= xk_im;
         v2 <= v1;  a2 <= a1;  sq_re <= re1 * re1;  sq_im <= im1 * im1;
         v3 <= v2;  a3 <= a2;  pw <= sq_re + sq_im;
-        v4 <= v3;  a4 <= a3;  zero4 <= (pw == 0);  L <= {e, 5'd0} + log2_frac(nm[30:26]);
+        v4a <= v3; a4a <= a3; zero4a <= (pw == 0); e4 <= e;  m4 <= nm[30:26];
+        v4 <= v4a; a4 <= a4a; zero4 <= zero4a;     L <= {e4, 5'd0} + log2_frac(m4);
         v5 <= v4;  a5 <= a4;  zero5 <= zero4;  hm <= HX_MUL * L + HX_ADD;   // < 2^19 for any L
         bar_we   <= v5;
         bar_addr <= a5;
         bar_h    <= (zero5 || below) ? 10'd0 : (hx[19:9] > 11'd600) ? 10'd600 : hx[18:9];
-        last3 <= v2 && (a2 == 9'd511);  last4 <= last3;  last5 <= last4;  last6 <= last5;
+        last3 <= v2 && (a2 == 9'd511);  last4a <= last3;  last4 <= last4a;  last5 <= last4;  last6 <= last5;
         bar_done <= last6;
     end
 endmodule
