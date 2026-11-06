@@ -6,15 +6,16 @@
 //                       tone). The mic is on pins 25/26/29.
 //   pin 87 button (S2): gain +6 dB, 0 -> +42 dB, then back to 0     (starts at 0 dB: the top
 //                       16 of the mic's 24 bits)
-//   pin 27, external button to 3.3 V (internal pull-down; 2026-11-06): play the demo sweep,
-//                       200 Hz -> 4 kHz in 4 s, through the board's MAX98357A amplifier
+//   pin 27, external button to 3.3 V (internal pull-down; 2026-11-06): demo sweep on / off,
+//                       200 Hz -> 4 kHz -> 200 Hz, 4 s each way, repeating, through the
+//                       board's MAX98357A amplifier
 //                       (sweep_player.v; I2S on pins 56 BCLK, 55 WS, 54 DIN, 51 PA_EN)
 // LEDs (lit when low), with LED_DIAG = 1:
 //   2 = mic: SD wire active (seen high and low in the last 56 ms)
 //   4 = trouble: the FFT overran (last 56 ms)
 //   5 = video PLL locked
 //   0 = display mode: on = spectrogram, off = bars
-//   1 = the demo sweep is playing
+//   1 = the demo sweep is on
 //   3 = unused (off)
 //   DESIGN=hdmi fpga_fft/build.sh
 //
@@ -69,7 +70,7 @@ module top_hdmi #(
     wire [1:0] pressed_x;
     buttons u_btn_x (.clk(pclk), .btn({1'b0, play_btn}), .pressed(pressed_x));
     wire sweep_on;
-    sweep_player u_sweep (.clk(pclk), .rst(vrst), .start(pressed_x[0]),
+    sweep_player u_sweep (.clk(pclk), .rst(vrst), .toggle(pressed_x[0]),
                           .bclk(hp_bck), .ws(hp_ws), .din(hp_din), .pa_en(pa_en),
                           .playing(sweep_on));
 
