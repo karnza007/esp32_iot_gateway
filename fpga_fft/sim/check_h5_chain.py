@@ -3,10 +3,11 @@
     python check_h5_chain.py <columns.txt> <out.png>
 
 With 50 % overlap, FFT c covers samples 512c .. 512c + 1023, during which the tone sweeps bins
-10 + 3c .. 16 + 3c, i.e. rows 5 + 1.5c .. 8 + 1.5c. Checks:
-  - in every column the brightest row lies in that range (one row of slack each side);
-  - a straight-line fit through those rows rises 1.5 rows per column;
-  - the quiet 1 kHz tone (row 23) shows (level >= 16, -65 dB or louder) wherever the sweep is
+10 + 3c .. 16 + 3c. Below 4 kHz each row is one bin (since 2026-11-06; before, two bins), so
+these are also the rows. Checks:
+  - in every column the brightest row lies in that range (two rows of slack each side);
+  - a straight-line fit through those rows rises 3 rows per column;
+  - the quiet 1 kHz tone (row 46) shows (level >= 16, -65 dB or louder) wherever the sweep is
     far from it;
   - rows far from both tones are dark (level <= 15, below -65 dB) in at least 95 % of places.
 (Levels: 0 = below -80 dB, 1..30 = -80..-51 dB, 31 = -50 dB and louder; spectrogram_display.v.
@@ -27,23 +28,23 @@ n = len(cols)
 ok = cols.shape == (40, 256)
 
 top = cols.argmax(axis=1)
-lo, hi = 5 + 1.5 * np.arange(n) - 1, 8 + 1.5 * np.arange(n) + 1
+lo, hi = 10 + 3 * np.arange(n) - 2, 16 + 3 * np.arange(n) + 2
 in_range = (top >= lo) & (top <= hi)
 slope, icpt = np.polyfit(np.arange(n), top, 1)
 print(f"  brightest row in the sweep's range: {int(in_range.sum())} of {n} columns; "
-      f"line fit: {slope:.2f} rows per column (want 1.5), start row {icpt:.1f} (want ~6.5)")
+      f"line fit: {slope:.2f} rows per column (want 3), start row {icpt:.1f} (want ~13)")
 print(f"  brightest level per column: min {cols.max(axis=1).min()}, max {cols.max(axis=1).max()}")
-ok &= bool(in_range.all()) and abs(slope - 1.5) < 0.05
+ok &= bool(in_range.all()) and abs(slope - 3) < 0.1
 
-far = [c for c in range(n) if abs(top[c] - 23) > 10]
-k1 = cols[far, 23]
-print(f"  1 kHz tone (row 23), where the sweep is > 10 rows away: levels {sorted(set(k1.tolist()))}")
+far = [c for c in range(n) if abs(top[c] - 46) > 20]
+k1 = cols[far, 46]
+print(f"  1 kHz tone (row 46), where the sweep is > 20 rows away: levels {sorted(set(k1.tolist()))}")
 ok &= bool((k1 >= 16).all())
 
 mask = np.ones_like(cols, dtype=bool)
 for c in range(n):
-    mask[c, max(0, top[c] - 15):top[c] + 16] = False
-mask[:, 18:29] = False
+    mask[c, max(0, top[c] - 30):top[c] + 31] = False
+mask[:, 36:58] = False
 dark = float((cols[mask] <= 15).mean())
 print(f"  away from both tones: {100 * dark:.1f} % dark (level <= 15)")
 ok &= dark >= 0.95

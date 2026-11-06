@@ -43,12 +43,13 @@ module spec_colour (
         endcase
 endmodule
 
-// spec_ticks: tick marks left of the plot every 1 kHz (x 120-127; 43.58 Hz per row)
+// spec_ticks: tick marks left of the plot every 1 kHz (x 120-127; 21.79 Hz per row up
+// to 4 kHz, then 225 rows per 1024 bins)
 // and below it every 1 s (y 660-667; 43.58 columns per second).
 module spec_ticks (
     input  wire [11:0] x, y,
     output wire        q
 );
-    assign q = (x >= 12'd120 && x < 12'd128 && (y == 12'd659 || y == 12'd613 || y == 12'd567 || y == 12'd521 || y == 12'd475 || y == 12'd430 || y == 12'd384 || y == 12'd338 || y == 12'd292 || y == 12'd246 || y == 12'd200 || y == 12'd154))
+    assign q = (x >= 12'd120 && x < 12'd128 && (y == 12'd659 || y == 12'd567 || y == 12'd475 || y == 12'd384 || y == 12'd292 || y == 12'd271 || y == 12'd251 || y == 12'd231 || y == 12'd211 || y == 12'd190 || y == 12'd170 || y == 12'd150))
             || (y >= 12'd660 && y < 12'd668 && (x == 12'd1150 || x == 12'd976 || x == 12'd801 || x == 12'd627 || x == 12'd453 || x == 12'd278));
 endmodule

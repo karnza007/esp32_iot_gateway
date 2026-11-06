@@ -2,8 +2,9 @@
 //
 // 300 fake FFT blocks are written into spectrogram_display exactly as spectrum.v writes them
 // (512 heights, then bar_done). Block k has:
-//   a diagonal line: bin 2k mod 512 at 0 dB (height 600)  -> row k mod 256, white
-//   a fixed tone:    bin 46 at -60 dB (height 150)        -> row 23 (unless bin 47 is louder)
+//   a diagonal line: bin 2k mod 512 at 0 dB (height 600)  -> white; a steep line below
+//                    4 kHz (one bin per row), a shallow one above
+//   a fixed tone:    bin 46 at -60 dB (height 150)        -> row 46
 //   everything else: even bins (13b + 5k) mod 241, odd bins (7b + 3k) mod 61, so every
 //                    height 0..240 shows up as the louder of a pair (sometimes the odd one),
 //                    covering all 32 levels and each edge between them (0/1, every 7.5, 224/225)

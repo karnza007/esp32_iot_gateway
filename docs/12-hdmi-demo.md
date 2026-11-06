@@ -435,6 +435,11 @@ registers, **27 / 46 block RAMs**, 7 / 24 DSP, 82.7 MHz. Details: `docs/reports/
 65,536 × 5 bits (4-bit + 1-bit memories, 20 block RAMs). Build: 2,365 logic, 932 registers,
 **36 / 46 block RAMs**, 7 / 24 DSP, 83.9 MHz. Details: `docs/reports/2026-11-08.md` §13.
 
+**Spectrogram rows (2026-11-06):** 0 … 4 kHz at one bin per row (rows 0 … 183, 72 % of the
+height), 4 … 11.1 kHz in rows 184 … 255 (4 … 5 bins each, the loudest kept); a dashed line marks
+4 kHz. Build: 2,396 logic, 954 registers, 36 / 46 block RAMs, 7.25 / 24 DSP, 83.9 MHz. Details:
+`docs/reports/2026-11-08.md` §14, design report §8.
+
 **50 % overlap (2026-11-04, step 4):** `spectrum.v` now keeps a ring of 2,048 raw samples and
 applies the Hann window as the FFT reads, so an FFT can start every 512 samples on the latest
 1,024 (`OVERLAP = 1` in `video_h3.v`; 0 = the old blocks, bit-identical). 43.6 FFTs/s: bars and

@@ -2,18 +2,26 @@
 //
 // LAYOUT
 //   plot:          x 128..1151, y 148..659 (1024 x 512 px). Time runs left -> right (newest
-//                  column at the right edge), frequency bottom -> top (0 -> fs/2).
-//   one point:     4 px wide (one FFT) x 2 px tall (two FFT bins). 256 columns = 5.9 s with
+//                  column at the right edge), frequency bottom -> top (0 -> fs/2) in two
+//                  zones (see ROWS below); a dashed grey line at y 291 marks the change
+//   one point:     4 px wide (one FFT) x 2 px tall (one row). 256 columns = 5.9 s with
 //                  50 % overlap (an FFT every 512 samples), 11.7 s without
 //   colour scale:  x 1168..1183, y 148..659: white (32 px) at the top, then the 30 colours,
 //                  16 px each, -50 dB at the top down to -80 dB
 //   tick marks:    left of the plot (every 1 kHz) and below it (every 1 s; 2 s without
 //                  overlap), from spec_ticks
 //
-// WRITING. spectrum.v sends 512 bar heights per FFT (bar_we/bar_addr/bar_h, then bar_done),
-// the same stream bar_display gets. Each pair of bins (2r, 2r+1) becomes row r: the louder of
-// the two, turned into a level 0..31, one per dB (the height scale is 7.5 px per dB, -80 dB at
-// height 0, so dB = height / 7.5 - 80):
+// ROWS (since 2026-11-06; before, every row was a pair of bins, 43.6 Hz, spread evenly):
+//   bins 0..183   (0 .. 4.0 kHz)   one bin per row: rows 0..183, 21.8 Hz each, 72 % of the height
+//   bins 184..511 (4.0 .. 11.1 kHz) rows 184..255: row = 184 + (bin - 184) x 225 / 1024
+//                                   (rounded down), 4 or 5 bins per row (about 99 Hz), the
+//                                   loudest of them kept, so a thin tone is never lost (this
+//                                   also makes the noise there look a few dB louder)
+//
+// WRITING. spectrum.v sends 512 bar heights per FFT (bar_we/bar_addr/bar_h, in bin order, then
+// bar_done), the same stream bar_display gets. Each row keeps the loudest of its bins, turned
+// into a level 0..31, one per dB (the height scale is 7.5 px per dB, -80 dB at height 0, so
+// dB = height / 7.5 - 80):
 //   0       height 0: -80 dB or quieter                  -> black
 //   1..30   -80 .. -51 dB, level = height / 7.5 + 1      -> viridis, dark purple .. yellow
 //   31      -50 dB or louder (height 225 and up)         -> white
@@ -45,25 +53,44 @@ module spectrogram_display (
     reg [3:0] mem_lo [0:65535];                           // {column, row} -> level bits 3..0
     reg       mem_hi [0:65535];                           //                  level bit 4
 
-    // ---- write: pairs of bins -> one level per row (3 clocks) ----
-    reg [9:0] h_even = 0;
-    reg       vA = 1'b0, doneA = 1'b0;  reg [7:0] rowA = 0;  reg [9:0] hA = 0;
-    reg       vB = 1'b0, doneB = 1'b0;  reg [7:0] rowB = 0;  reg [4:0] lvlB = 0;
-    reg [7:0] wcol = 0;                                   // the column being written
-    wire [19:0] prod = hA * 10'd547;                      // height / 7.5 = height x 547 / 2^12
+    // ---- write: bins -> rows -> one level per row (4 clocks) ----
+    // A: which row the bin belongs to, and whether it is the row's last bin. Upper zone:
+    //    d = bin - 184, row = 184 + (d x 225) >> 10; the next bin starts a new row exactly when
+    //    the low 10 bits of d x 225 are 799 or more (adding 225 then carries into bit 10).
+    wire        upper = (bar_addr >= 9'd184);
+    wire [8:0]  d     = bar_addr - 9'd184;
+    wire [16:0] dmul  = d * 8'd225;
+    reg         vA = 1'b0, doneA = 1'b0, lastA = 1'b0;  reg [7:0] rowA = 0;  reg [9:0] hA = 0;
+    // B: the loudest bin so far of the current row; passed on at the row's last bin
+    reg         first = 1'b1;                             // the next bin starts a new row
+    reg  [9:0]  acc = 0;
+    wire [9:0]  hmax = (first || hA > acc) ? hA : acc;
+    reg         vB = 1'b0, doneB = 1'b0;  reg [7:0] rowB = 0;  reg [9:0] hB = 0;
+    // C: height -> level
+    reg         vC = 1'b0, doneC = 1'b0;  reg [7:0] rowC = 0;  reg [4:0] lvlC = 0;
+    wire [19:0] prod = hB * 10'd547;                      // height / 7.5 = height x 547 / 2^12
                                                           // (exact, rounded down, for height < 225)
+    reg  [7:0]  wcol = 0;                                 // the column being written
     always @(posedge clk) begin
-        if (bar_we && !bar_addr[0]) h_even <= bar_h;
-        vA <= bar_we && bar_addr[0];  rowA <= bar_addr[8:1];  doneA <= bar_done;
-        hA <= (bar_h > h_even) ? bar_h : h_even;          // the louder bin of the pair
-        vB <= vA;  rowB <= rowA;  doneB <= doneA;
-        lvlB <= (hA == 10'd0)   ? 5'd0  :
-                (hA >= 10'd225) ? 5'd31 : prod[16:12] + 5'd1;
-        if (vB) begin
-            mem_lo[{wcol, rowB}] <= lvlB[3:0];
-            mem_hi[{wcol, rowB}] <= lvlB[4];
+        vA    <= bar_we;  hA <= bar_h;  doneA <= bar_done;
+        rowA  <= upper ? 8'd184 + dmul[16:10] : bar_addr[7:0];
+        lastA <= !upper || bar_addr == 9'd511 || dmul[9:0] >= 10'd799;
+
+        if (vA) begin
+            acc   <= hmax;
+            first <= lastA;
         end
-        if (doneB) wcol <= wcol + 1'b1;
+        if (doneA) first <= 1'b1;
+        vB <= vA && lastA;  rowB <= rowA;  hB <= hmax;  doneB <= doneA;
+
+        vC <= vB;  rowC <= rowB;  doneC <= doneB;
+        lvlC <= (hB == 10'd0)   ? 5'd0  :
+                (hB >= 10'd225) ? 5'd31 : prod[16:12] + 5'd1;
+        if (vC) begin
+            mem_lo[{wcol, rowC}] <= lvlC[3:0];
+            mem_hi[{wcol, rowC}] <= lvlC[4];
+        end
+        if (doneC) wcol <= wcol + 1'b1;
     end
 
     // ---- read: the oldest column is shown at the left ----
@@ -98,6 +125,8 @@ module spectrogram_display (
     spec_ticks  u_tk (.x(x1), .y(y1), .q(tick));
     always @(posedge clk) begin
         if (!de1)          {r, g, b} <= 24'h000000;
+        else if (in_plot && y1 == 12'd291 && !x1[2])
+                           {r, g, b} <= 24'h808080;      // dashes 4 px on, 4 off: the 4 kHz zone edge
         else if (in_plot)  {r, g, b} <= c_plot;
         else if (in_scale) {r, g, b} <= c_scale;
         else if (tick)     {r, g, b} <= 24'h808080;
