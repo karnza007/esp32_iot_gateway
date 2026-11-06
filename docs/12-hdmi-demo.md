@@ -440,6 +440,12 @@ height), 4 … 11.1 kHz in rows 184 … 255 (4 … 5 bins each, the loudest kept
 4 kHz. Build: 2,396 logic, 954 registers, 36 / 46 block RAMs, 7.25 / 24 DSP, 83.9 MHz. Details:
 `docs/reports/2026-11-08.md` §14, design report §8.
 
+**Demo sweep (2026-11-06):** `sweep_player.v` plays 200 Hz → 4 kHz in 4 s through the board's
+MAX98357A amplifier (I2S on pins 56/55/54, PA_EN 51) when an external button on pin 27 (to 3.3 V)
+is pressed; the mic hears it and the spectrogram draws a straight line. The display starts on the
+spectrogram. Build: 2,728 logic, 37 / 46 block RAMs, 8.25 / 24 DSP, 86.5 MHz. Details:
+`docs/reports/2026-11-08.md` §15.
+
 **50 % overlap (2026-11-04, step 4):** `spectrum.v` now keeps a ring of 2,048 raw samples and
 applies the Hann window as the FFT reads, so an FFT can start every 512 samples on the latest
 1,024 (`OVERLAP = 1` in `video_h3.v`; 0 = the old blocks, bit-identical). 43.6 FFTs/s: bars and

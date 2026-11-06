@@ -17,4 +17,7 @@ foreach f [glob -nocomplain src/hdmi/*.v] { add_file $f }
 add_file $SDC
 set_option -top_module $TOP
 set_option -output_base_name fpga_fft
+# pins 54-56 (the MAX98357A amplifier, HDMI build) are the SSPI configuration port unless freed;
+# Sipeed's own audio example does the same. Configuration here is over JTAG, so SSPI is unused.
+set_option -use_sspi_as_gpio 1
 run all
