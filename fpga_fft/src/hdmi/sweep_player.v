@@ -11,8 +11,14 @@
 //         amplifier off (PA_EN low), so there is no hiss in between.
 //   A press during the 20 ms before the sound cancels it; a press while fading out turns it
 //   back on (the fade turns round). Each "on" starts at 200 Hz going up.
+//   Two more tones (since 2026-11-06) follow the main one, turning and fading with it:
+//     2nd: 1.5 x the main frequency (300 Hz <-> 6 kHz), amplitude AMP / 4 (AMP2_SHIFT = 2: -12 dB)
+//     3rd: 2 x the main frequency (400 Hz <-> 8 kHz),   amplitude AMP / 4 (AMP3_SHIFT = 2: -12 dB)
+//   Peak of the sum: 3277 + 819 + 819 = 4915 (-16.5 dB of full scale). (The 3rd tone sits where
+//   the speaker's own 2nd-harmonic distortion would show, so the two cannot be told apart.)
 //   On the spectrogram (5.9 s wide): a zig-zag between rows 9 and 184 (the dashed 4 kHz line),
-//   174 columns per leg.
+//   174 columns per leg, and the two others above it, bending where they cross 4 kHz into the
+//   squeezed rows.
 //
 // THE TONE: a phase accumulator, as in tone_gen.v. Every sample, phase += step, and step goes up
 // (or down) by SWEEP_STEP; the top 10 bits of the phase index one sine period in rom_sine. At
@@ -37,7 +43,9 @@ module sweep_player #(
     parameter [31:0]  SWEEP_STEP = 32'd1746,      // per sample: 200 Hz -> 4 kHz in N_SWEEP
     parameter integer N_SWEEP    = 193359,        // samples: 4.0 s
     parameter integer N_QUIET    = 967,           // samples of silence before and after: 20 ms
-    parameter [15:0]  AMP        = 16'd3277       // peak, of 32767: -20 dB
+    parameter [15:0]  AMP        = 16'd3277,      // peak, of 32767: -20 dB
+    parameter integer AMP2_SHIFT = 2,             // 2nd tone (1.5 x the frequency): AMP / 2^this
+    parameter integer AMP3_SHIFT = 2              // 3rd tone (2 x the frequency):   AMP / 2^this
 )(
     input  wire clk,
     input  wire rst,
@@ -74,17 +82,24 @@ module sweep_player #(
     reg  [15:0] q = 0;                            // samples of quiet so far (PRE, POST)
     reg  [17:0] n = 0;                            // samples into the current leg
     reg         up = 1'b1;                        // the leg: 1 = rising
-    reg  [31:0] ph = 0, step = 0;
+    reg  [31:0] ph = 0, ph2 = 0, ph3 = 0, step = 0;  // ph2, ph3: 1.5 x and 2 x as fast
     reg  [9:0]  env = 0;                          // fade: 0 .. 512
     wire        sounding = (st == PLAY) || (st == STOP);
     assign pa_en   = (st != IDLE);
     assign playing = sounding;
 
-    // ---- the next sample, worked out early in each frame (clocks 4..8), sent from clock 0 ----
+    // ---- the next sample, worked out early in each frame (clocks 4..15), sent from clock 0 ----
+    // One sine table, read three times: the main tone's value is there at clock 4, the 2nd
+    // tone's (address switched at clock 5) at clock 7, the 3rd tone's (clock 8) at clock 10.
+    // sample = (sine1 + sine2 / 4 + sine3 / 4) x AMP x env / 2^24.
+    reg  [1:0]         sel = 2'd0;                // which tone the table reads: 0, 1 = 2nd, 2 = 3rd
     wire signed [15:0] sine;
-    rom_sine u_rom (.clk(clk), .addr(ph[31:22]), .q(sine));
+    rom_sine u_rom (.clk(clk), .addr(sel == 2'd1 ? ph2[31:22] : sel == 2'd2 ? ph3[31:22] : ph[31:22]),
+                    .q(sine));
     reg  [15:0]        g = 0;                     // AMP x env / 512
-    reg  signed [31:0] prod = 0;
+    reg  signed [15:0] s1 = 0;
+    reg  signed [16:0] mix = 0;                   // sine1 + sine2 / 2^AMP2_SHIFT + sine3 / 2^AMP3_SHIFT
+    reg  signed [33:0] prod = 0;
     reg  signed [15:0] nxt = 0, cur = 0;
     wire [25:0]        amp_env = AMP * env;
     reg                tog_seen = 1'b0;
@@ -93,13 +108,27 @@ module sweep_player #(
         if (rst) begin
             st <= IDLE;  q <= 0;  nxt <= 0;  tog_seen <= 1'b0;
         end else begin
-            if (cnt == 16'd4) g <= amp_env[24:9];                         // AMP x env / 512
-            if (cnt == 16'd6) prod <= sine * $signed({1'b0, g});          // rom has answered
-            if (cnt == 16'd8) begin
+            if (cnt == 16'd4) begin
+                g    <= amp_env[24:9];                                    // AMP x env / 512
+                s1   <= sine;                                             // main tone
+                sel  <= 2'd1;
+            end
+            if (cnt == 16'd7) begin
+                mix  <= s1 + (sine >>> AMP2_SHIFT);                       // + 2nd tone
+                sel  <= 2'd2;
+            end
+            if (cnt == 16'd10) begin
+                mix  <= mix + (sine >>> AMP3_SHIFT);                      // + 3rd tone
+                sel  <= 2'd0;
+            end
+            if (cnt == 16'd12) prod <= mix * $signed({1'b0, g});
+            if (cnt == 16'd15) begin
                 nxt <= sounding ? prod[30:15] : 16'sd0;
                 // step on to the next sample
                 if (sounding) begin
-                    ph <= ph + step;
+                    ph  <= ph + step;
+                    ph2 <= ph2 + step + (step >> 1);                       // 1.5 x step
+                    ph3 <= ph3 + (step << 1);                              // 2 x step
                     if (n == N_SWEEP - 1) begin                           // end of a leg: turn
                         n  <= 0;
                         up <= ~up;
@@ -110,7 +139,7 @@ module sweep_player #(
                 end
                 case (st)
                     PRE:  if (q == N_QUIET - 1) begin
-                              st <= PLAY;  ph <= 0;  step <= STEP_START;  n <= 0;  up <= 1'b1;
+                              st <= PLAY;  ph <= 0;  ph2 <= 0;  ph3 <= 0;  step <= STEP_START;  n <= 0;  up <= 1'b1;
                               env <= 0;
                           end else q <= q + 1'b1;
                     PLAY: if (env != FADE) env <= env + 1'b1;

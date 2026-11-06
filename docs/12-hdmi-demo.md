@@ -450,6 +450,10 @@ spectrogram. Build: 2,728 logic, 37 / 46 block RAMs, 8.25 / 24 DSP, 86.5 MHz. De
 sweeps 200 Hz → 4 kHz → 200 Hz, 4 s each way, repeating (fades only at on and off). Build: 2,691
 logic, 37 / 46 block RAMs, 79.4 MHz. Details: `docs/reports/2026-11-08.md` §16.
 
+**Demo sweep, three tones (2026-11-06):** two more tones follow the main sweep, at 1.5 × (300 Hz ↔
+6 kHz) and 2 × (400 Hz ↔ 8 kHz), each −12 dB. Build: 2,872 logic, 37 / 46 block RAMs, 79.2 MHz.
+Details: `docs/reports/2026-11-08.md` §17.
+
 **50 % overlap (2026-11-04, step 4):** `spectrum.v` now keeps a ring of 2,048 raw samples and
 applies the Hann window as the FFT reads, so an FFT can start every 512 samples on the latest
 1,024 (`OVERLAP = 1` in `video_h3.v`; 0 = the old blocks, bit-identical). 43.6 FFTs/s: bars and
