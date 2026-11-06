@@ -3,10 +3,10 @@
 // q = 1 one clock after x.
 module rom_ticks (
     input  wire        clk,
-    input  wire        page,
+    input  wire [1:0]  page,
     input  wire [11:0] x,
     output reg         q = 1'b0
 );
     always @(posedge clk)
-        q <= !page && (x == 12'd128 || x == 12'd220 || x == 12'd312 || x == 12'd403 || x == 12'd495 || x == 12'd587 || x == 12'd679 || x == 12'd771 || x == 12'd862 || x == 12'd954 || x == 12'd1046 || x == 12'd1138);
+        q <= (page == 2'd0) && (x == 12'd128 || x == 12'd220 || x == 12'd312 || x == 12'd403 || x == 12'd495 || x == 12'd587 || x == 12'd679 || x == 12'd771 || x == 12'd862 || x == 12'd954 || x == 12'd1046 || x == 12'd1138);
 endmodule

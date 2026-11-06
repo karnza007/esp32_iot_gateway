@@ -1,8 +1,9 @@
 // top_hdmi.v — HDMI demo build (docs/plans/hdmi-demo.md). Step H3: live microphone spectrum.
 //
 // CONTROLS (the board's two buttons, and one external button)
-//   pin 88 button (S1): display mode  bars <-> spectrogram   (starts on the spectrogram since
-//                       2026-11-06, on bars before; until 2026-11-04 S1 switched mic <-> test
+//   pin 88 button (S1): display mode, in turn  spectrogram -> bars -> waveform -> spectrogram
+//                       (starts on the spectrogram; the waveform screen since 2026-11-06, before
+//                       that bars <-> spectrogram; until 2026-11-04 S1 switched mic <-> test
 //                       tone). The mic is on pins 25/26/29.
 //   pin 87 button (S2): gain +6 dB, 0 -> +42 dB, then back to 0     (starts at 0 dB: the top
 //                       16 of the mic's 24 bits)
@@ -14,9 +15,9 @@
 //   2 = mic: SD wire active (seen high and low in the last 56 ms)
 //   4 = trouble: the FFT overran (last 56 ms)
 //   5 = video PLL locked
-//   0 = display mode: on = spectrogram, off = bars
+//   0 = display mode: on = spectrogram
+//   3 = display mode: on = waveform        (0 and 3 both off = bars)
 //   1 = the demo sweep is on
-//   3 = unused (off)
 //   DESIGN=hdmi fpga_fft/build.sh
 //
 //   27 MHz crystal ─▶ rPLL ×55÷4 ─▶ 371.25 MHz ─────────────▶ serializers only (fclk)
@@ -59,10 +60,10 @@ module top_hdmi #(
     // buttons -> display mode and gain
     wire [1:0] pressed;
     buttons u_btn (.clk(pclk), .btn(btn), .pressed(pressed));
-    reg       mode    = 1'b1;                       // 0 = bars, 1 = spectrogram (at power-up)
+    reg [1:0] mode    = 2'd1;                       // 0 = bars, 1 = spectrogram (power-up), 2 = waveform
     reg [2:0] gain    = GAIN_START;
     always @(posedge pclk) begin
-        if (pressed[0]) mode    <= ~mode;
+        if (pressed[0]) mode    <= (mode == 2'd1) ? 2'd0 : (mode == 2'd0) ? 2'd2 : 2'd1;
         if (pressed[1]) gain    <= gain + 1'b1;          // wraps 7 -> 0
     end
 
@@ -103,7 +104,7 @@ module top_hdmi #(
     end
 
     // LEDs (lit when low): see the header.
-    assign led = LED_DIAG ? {~locked, ~show_bad, 1'b1, ~(show_hi & show_lo),
-                             ~sweep_on, ~mode}
+    assign led = LED_DIAG ? {~locked, ~show_bad, ~(mode == 2'd2), ~(show_hi & show_lo),
+                             ~sweep_on, ~(mode == 2'd1)}
                           : {~locked, ~overrun, 1'b1, ~gain};
 endmodule

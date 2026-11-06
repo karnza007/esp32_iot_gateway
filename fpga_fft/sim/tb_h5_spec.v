@@ -34,7 +34,7 @@ module tb_h5_spec;
         .clk(clk), .rst(rst), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
         .bar_done(bar_done), .gain(3'd4), .dyn(dyn));
     wire [23:0] rgb;
-    text_overlay u_text (.clk(clk), .x(x), .y(y), .de(de), .page(1'b1), .dyn(dyn),
+    text_overlay u_text (.clk(clk), .x(x), .y(y), .de(de), .page(2'd1), .dyn(dyn),
                          .bar_rgb({sr, sg, sb}), .rgb(rgb));
     reg [2:0] d1 = 0, d2 = 0, d3 = 0, d4 = 0;
     always @(posedge clk) begin d1 <= {de, hs, vs}; d2 <= d1; d3 <= d2; d4 <= d3; end

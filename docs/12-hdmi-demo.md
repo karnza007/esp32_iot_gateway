@@ -454,6 +454,11 @@ logic, 37 / 46 block RAMs, 79.4 MHz. Details: `docs/reports/2026-11-08.md` §16.
 6 kHz) and 2 × (400 Hz ↔ 8 kHz), each −12 dB. Build: 2,872 logic, 37 / 46 block RAMs, 79.2 MHz.
 Details: `docs/reports/2026-11-08.md` §17.
 
+**Waveform screen (2026-11-06):** S1 cycles spectrogram → bars → waveform. The waveform shows the
+FFT's input, 1,024 samples (45.9 ms), edges at the peak of a −40 dB tone (±1,311), grid at −50 /
+−60 dB, triggered on a rising zero crossing (`wave_display.v`). Build: 3,059 logic, 42 / 46 block
+RAMs, 77.5 MHz. Details: `docs/reports/2026-11-08.md` §18, design report §8A.
+
 **50 % overlap (2026-11-04, step 4):** `spectrum.v` now keeps a ring of 2,048 raw samples and
 applies the Hann window as the FFT reads, so an FFT can start every 512 samples on the latest
 1,024 (`OVERLAP = 1` in `video_h3.v`; 0 = the old blocks, bit-identical). 43.6 FFTs/s: bars and

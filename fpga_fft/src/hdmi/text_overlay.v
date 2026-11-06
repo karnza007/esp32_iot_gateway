@@ -4,10 +4,11 @@
 //   cell     col = x / 16, row = y / 16  ->  rom_text: which character, which colour
 //   glyph    row (y mod 16) / 2, column (x mod 16) / 2  ->  rom_font: is this pixel lit
 // Each font pixel is drawn as a 2x2 block. The text ROM holds one page per display mode
-// (page 0 = bars, 1 = spectrogram; see gen_h4_text.py). A cell marked "live" takes its
+// (page 0 = bars, 1 = spectrogram, 2 = waveform; see gen_h4_text.py). A cell marked "live" takes its
 // character from dyn (peak_readout.v) instead of the ROM.
 // bar_rgb is the picture under the text: bar_display's on page 0, spectrogram_display's on
-// page 1 (video_h3.v picks). The kHz tick lines are drawn on page 0 only (rom_ticks).
+// page 1, wave_display's on page 2 (video_h3.v picks). The kHz tick lines are drawn on page 0
+// only (rom_ticks).
 //
 // TIMING. bar_display gives the bar colour 2 clocks after x/y. This block takes 4:
 //   clock 1: text ROM address (row/column)   clock 2: text ROM and tick ROM
@@ -20,18 +21,19 @@ module text_overlay (
     input  wire        clk,
     input  wire [11:0] x, y,           // the same x/y that go into bar_display
     input  wire        de,
-    input  wire        page,           // display mode: 0 = bars, 1 = spectrogram
+    input  wire [1:0]  page,           // display mode: 0 = bars, 1 = spectrogram, 2 = waveform
     input  wire [76:0] dyn,            // 11 live characters, char k at [7k+6:7k]
     input  wire [23:0] bar_rgb,        // bar_display's colour (2 clocks after x/y)
     output reg  [23:0] rgb = 24'h000000
 );
     // ---- clock 1: which cell ----
-    reg [12:0] addr1 = 0;
-    wire [12:0] row80 = {y[9:4], 6'd0} + {y[9:4], 4'd0};            // row x 80
+    reg [13:0] addr1 = 0;
+    wire [13:0] row80 = {y[9:4], 6'd0} + {y[9:4], 4'd0};            // row x 80
     reg [11:0] x1 = 0, y1 = 0;
-    reg        de1 = 1'b0, page1 = 1'b0;
+    reg        de1 = 1'b0;
+    reg [1:0]  page1 = 2'd0;
     always @(posedge clk) begin
-        addr1 <= (page ? 13'd3600 : 13'd0) + row80 + x[10:4];
+        addr1 <= (page == 2'd1 ? 14'd3600 : page == 2'd2 ? 14'd7200 : 14'd0) + row80 + x[10:4];
         x1 <= x; y1 <= y; de1 <= de; page1 <= page;
     end
 

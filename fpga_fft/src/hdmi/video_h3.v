@@ -17,7 +17,7 @@ module video_h3 #(
     parameter integer OVERLAP      = 1       // 1: an FFT every 512 samples, 50 % overlap (spectrum.v)
 )(
     input  wire       pclk, fclk, rst,
-    input  wire       mode,              // display: 0 = bars, 1 = spectrogram (S1)
+    input  wire [1:0] mode,              // display: 0 = bars, 1 = spectrogram, 2 = waveform (S1)
     input  wire [2:0] gain,
     output wire       i2s_sck, i2s_ws,
     input  wire       i2s_sd,
@@ -51,13 +51,18 @@ module video_h3 #(
     spectrogram_display u_sgram (.clk(pclk), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
                         .bar_done(bar_done), .x(x), .y(y), .de(de), .r(sr), .g(sg), .b(sb));
 
+    wire [7:0] wr, wg, wb;
+    wave_display u_wave (.clk(pclk), .s_valid(s_valid), .s_in(s), .x(x), .y(y), .de(de),
+                         .r(wr), .g(wg), .b(wb));
+
     wire [76:0] dyn;
     peak_readout #(.MIC_BCLK_DIV(MIC_BCLK_DIV), .FLOOR_DB(FLOOR_DB)) u_peak (
         .clk(pclk), .rst(rst), .bar_we(bar_we), .bar_addr(bar_addr), .bar_h(bar_h),
         .bar_done(bar_done), .gain(gain), .dyn(dyn));
     wire [23:0] rgb;
     text_overlay u_text (.clk(pclk), .x(x), .y(y), .de(de), .page(mode), .dyn(dyn),
-                         .bar_rgb(mode ? {sr, sg, sb} : {br, bg, bb}), .rgb(rgb));
+                         .bar_rgb(mode == 2'd1 ? {sr, sg, sb} : mode == 2'd2 ? {wr, wg, wb} : {br, bg, bb}),
+                         .rgb(rgb));
 
     // the final colour comes 4 clocks after x/y (text_overlay.v): sync signals are delayed by 4
     reg [2:0] d1 = 0, d2 = 0, d3 = 0, d4 = 0;
