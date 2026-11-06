@@ -40,11 +40,18 @@ IO_PORT "btn[0]" IO_TYPE=LVCMOS33 PULL_MODE=DOWN;
 IO_LOC "btn[1]" 87;
 IO_PORT "btn[1]" IO_TYPE=LVCMOS33 PULL_MODE=DOWN;
 
-// external button for the demo sweep (2026-11-06): pin 27 to 3.3 V, read 1 while pressed
-// (pull-down, like S1/S2; until the same day pull-up with the button to GND).
-// Pin 27 was the ESP32 UART until 2026-10-29.
-IO_LOC "play_btn" 27;
-IO_PORT "play_btn" IO_TYPE=LVCMOS33 PULL_MODE=DOWN;
+// external button (2026-11-06): pin 27 to 3.3 V, read 1 while pressed (pull-down, like S1/S2).
+// Auto-rotate on / frozen; until 2026-11-06 it played the demo sweep. Pin 27 was the ESP32 UART
+// until 2026-10-29.
+IO_LOC "rot_btn" 27;
+IO_PORT "rot_btn" IO_TYPE=LVCMOS33 PULL_MODE=DOWN;
+
+// the board's USB serial port (BL616 debugger chip): music from the Mac in, credits out.
+// Pins as in Sipeed's TangNano-20K-example/uart (the FPGA receives on 70, sends on 69).
+IO_LOC "uart_rx" 70;
+IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+IO_LOC "uart_tx" 69;
+IO_PORT "uart_tx" IO_TYPE=LVCMOS33 DRIVE=8;
 
 // the board's MAX98357A I2S amplifier and speaker (pins from Sipeed's TangNano-20K-example/audio)
 IO_LOC "pa_en" 51;              // amplifier on when high

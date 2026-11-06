@@ -6,6 +6,8 @@
 #   MHZ=81 ./build.sh ... the 81 MHz build (src/top_81.v: PLL triples it)
 #   DESIGN=hdmi ./build.sh  the HDMI demo build (src/top_hdmi.v, docs/plans/hdmi-demo.md)
 #   DESIGN=mic ./build.sh   the microphone check (src/top_mic_uart.v: mic -> UART -> ESP32 -> viewer)
+#   DESIGN=echo ./build.sh  USB-serial speed test, both ways (src/top_uart_echo.v)
+#   DESIGN=count ./build.sh USB-serial speed test, Mac -> FPGA only (src/top_uart_count.v)
 # Same result as Synthesize + Place & Route in the IDE; reports land in impl/.
 set -e
 # PR1014 is filtered: the 20K's crystal lands on pin 4, a PLL input rather than a
@@ -16,13 +18,17 @@ cd "$(dirname "$0")"
 CST=src/top.cst
 if [ "$DESIGN" = hdmi ]; then MHZ=hdmi; CST=src/top_hdmi.cst; fi
 if [ "$DESIGN" = mic ]; then MHZ=mic; CST=src/top_mic_uart.cst; fi
+if [ "$DESIGN" = echo ]; then MHZ=echo; CST=src/top_uart_echo.cst; fi
+if [ "$DESIGN" = count ]; then MHZ=count; CST=src/top_uart_count.cst; fi
 case "${MHZ:-27}" in
   hdmi) TOP=top_hdmi ;;
   mic) TOP=top_mic_uart ;;
+  echo) TOP=top_uart_echo ;;
+  count) TOP=top_uart_count ;;
   27) TOP=top ;;
   54) TOP=top_54 ;;
   81) TOP=top_81 ;;
-  *)  echo "MHZ must be 27, 54 or 81 (or DESIGN=hdmi / DESIGN=mic)"; exit 1 ;;
+  *)  echo "MHZ must be 27, 54 or 81 (or DESIGN=hdmi / mic / echo / count)"; exit 1 ;;
 esac
 echo "building $TOP (${MHZ:-27})"
 # gw_sh takes no arguments, so the choice is passed through a two-line wrapper script

@@ -1,0 +1,10 @@
+// Tang Nano 20K pins for the USB-serial one-way speed test (top_uart_count.v). Pins 69/70 as in Sipeed's
+// TangNano-20K-example/uart: the FPGA receives on 70 and sends on 69.
+IO_LOC "clk" 4;
+IO_PORT "clk" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+IO_LOC "uart_rx" 70;
+IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+IO_LOC "uart_tx" 69;
+IO_PORT "uart_tx" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_LOC "led0" 15;
+IO_PORT "led0" IO_TYPE=LVCMOS33 DRIVE=8;
