@@ -2,9 +2,11 @@
 //
 // 300 fake FFT blocks are written into spectrogram_display exactly as spectrum.v writes them
 // (512 heights, then bar_done). Block k has:
-//   a diagonal line: bin 2k mod 512 at 0 dB (height 600)  -> row k mod 256, colour 15
-//   a fixed tone:    bin 46 at -23 dB (height 428)        -> row 23, colour 11
-//   everything else: heights 20..34 (below -75 dB)        -> colour 0, black
+//   a diagonal line: bin 2k mod 512 at 0 dB (height 600)  -> row k mod 256, white
+//   a fixed tone:    bin 46 at -60 dB (height 150)        -> row 23 (unless bin 47 is louder)
+//   everything else: even bins (13b + 5k) mod 241, odd bins (7b + 3k) mod 61, so every
+//                    height 0..240 shows up as the louder of a pair (sometimes the odd one),
+//                    covering all 32 levels and each edge between them (0/1, every 7.5, 224/225)
 // 300 > 256, so the memory has wrapped: the screen must show blocks 44..299, oldest at the left.
 // After the next vertical blanking one frame is written as hex, one pixel per line, to
 // +out=<file>; check_h5.py checks it.
@@ -38,8 +40,8 @@ module tb_h5_spec;
 
     function [9:0] height(input integer k, input integer b);
         begin
-            height = 20 + (b % 15);
-            if (b == 46) height = 428;
+            height = (b % 2) ? (7 * b + 3 * k) % 61 : (13 * b + 5 * k) % 241;
+            if (b == 46) height = 150;
             if (b == (2 * k) % 512) height = 600;
         end
     endfunction

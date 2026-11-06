@@ -6,7 +6,7 @@
 // tone 40 dB quieter (bin 46, row 23) runs under it. With 50 % overlap (as on the board) there
 // is an FFT every 512 samples, so the line rises 1.5 rows per column. A sample every 16 clocks instead of 3328
 // keeps the run short; the bins are the same as on the board. After 40 blocks the picture
-// memory is written out, one line per column (256 colour numbers, row 0 first), to
+// memory is written out, one line per column (256 levels 0..31, row 0 first), to
 // +out=<file>; check_h5_chain.py checks the line.
 //   iverilog -g2012 -s tb_h5_chain -o h5c.vvp sim/tb_h5_chain.v src/hdmi/{spectrum,tone_gen,
 //            rom_sine,rom_hann,spectrogram_display,rom_spec}.v src/fft/fft_1024.vo prim_sim.v
@@ -48,7 +48,8 @@ module tb_h5_chain;
             repeat (8) @(posedge clk);
             f = $fopen(fname, "w");
             for (c = 0; c < 40; c = c + 1) begin
-                for (r = 0; r < 256; r = r + 1) $fwrite(f, "%0d ", u_sgram.mem[{c[7:0], r[7:0]}]);
+                for (r = 0; r < 256; r = r + 1) $fwrite(f, "%0d ", {u_sgram.mem_hi[{c[7:0], r[7:0]}],
+                                                       u_sgram.mem_lo[{c[7:0], r[7:0]}]});
                 $fwrite(f, "\n");
             end
             $fclose(f);

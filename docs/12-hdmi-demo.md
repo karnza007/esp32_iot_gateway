@@ -430,6 +430,11 @@ on the right (`gen_h4_text.py` page 1 and `rom_spec.v`). Build: 2,614 logic (13 
 registers, **27 / 46 block RAMs**, 7 / 24 DSP, 82.7 MHz. Details: `docs/reports/2026-11-08.md`
 §10.
 
+**Spectrogram colours (2026-11-06):** 32 levels, one per dB: black below −80 dB, matplotlib's
+"viridis" (dark purple → yellow) for −80 … −51 dB, white for −50 dB and louder. The picture is
+65,536 × 5 bits (4-bit + 1-bit memories, 20 block RAMs). Build: 2,365 logic, 932 registers,
+**36 / 46 block RAMs**, 7 / 24 DSP, 83.9 MHz. Details: `docs/reports/2026-11-08.md` §13.
+
 **50 % overlap (2026-11-04, step 4):** `spectrum.v` now keeps a ring of 2,048 raw samples and
 applies the Hann window as the FFT reads, so an FFT can start every 512 samples on the latest
 1,024 (`OVERLAP = 1` in `video_h3.v`; 0 = the old blocks, bit-identical). 43.6 FFTs/s: bars and
