@@ -461,7 +461,7 @@ RAMs, 77.5 MHz. Details: `docs/reports/2026-11-08.md` §18, design report §8A.
 
 **Music from the Mac, auto-rotate (2026-11-06):** `host/play_song.py` sends any song (24,170 Hz
 mono) through the board's own USB cable (BL616 serial, FPGA pins 70/69, 3 Mbaud, credit flow
-control) to `audio_rx.v` → `i2s_tx.v` → the speaker. The pin-27 button freezes / resumes a 10 s
+control) to `audio_rx.v` → `i2s_tx.v` → the speaker. The pin-27 button freezes / resumes a 6 s (10 s until 2026-11-07)
 rotation of the three screens. The demo sweep is archived (`fpga_fft/archive/`, tag `demo-sweep`).
 Build: 3,141 logic, 43 / 46 block RAMs, 76.0 MHz. Details: `docs/reports/2026-11-08.md` §19.
 

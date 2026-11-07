@@ -8,8 +8,9 @@
 //   pin 87 button (S2): gain +6 dB, 0 -> +42 dB, then back to 0     (starts at 0 dB: the top
 //                       16 of the mic's 24 bits)
 //   pin 27, external button to 3.3 V (internal pull-down): auto-rotate on <-> frozen. On (at
-//                       power-up), the display moves to the next mode every 10 s; S1 also
-//                       restarts the 10 s. (Until 2026-11-06 this button played the demo sweep,
+//                       power-up), the display moves to the next mode every 6 s (10 s until
+//                       2026-11-07); S1 also restarts the 6 s. (Until 2026-11-06 this button
+//                       played the demo sweep,
 //                       now in fpga_fft/archive/, git tag demo-sweep.)
 // MUSIC (2026-11-06): host/play_song.py on the Mac -> the Tang's own USB cable (BL616 serial
 //   port) -> pin 70 -> audio_rx.v -> i2s_tx.v -> the board's MAX98357A (pins 56 BCLK, 55 WS,
@@ -68,7 +69,7 @@ module top_hdmi #(
     // external button (pin 27) -> auto-rotate on / frozen
     wire [1:0] pressed_x;
     buttons u_btn_x (.clk(pclk), .btn({1'b0, rot_btn}), .pressed(pressed_x));
-    localparam [29:0] ROT_CLOCKS = 30'd742_500_000;  // 10 s at 74.25 MHz
+    localparam [29:0] ROT_CLOCKS = 30'd445_500_000;  // 6 s at 74.25 MHz
     reg [1:0]  mode    = 2'd1;                       // 0 = bars, 1 = spectrogram (power-up), 2 = waveform
     reg [2:0]  gain    = GAIN_START;
     reg        rot_on  = 1'b1;
